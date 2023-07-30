@@ -49,7 +49,7 @@ contract Setup is ExtendedTest, IEvents {
     uint256 public MAX_BPS = 10_000;
 
     // Fuzz
-    uint256 public maxFuzzAmount = 10_000 * 1e18; //1e5 * 1e18;
+    uint256 public maxFuzzAmount = 50 * 1e18; //1e5 * 1e18;
     uint256 public minFuzzAmount = 1e17;
 
     uint256 public expectedActivityLossBPS = 1000;
@@ -92,10 +92,10 @@ contract Setup is ExtendedTest, IEvents {
         }
         //Polygon:
         if(vm.activeFork() == polygonFork) {
-            asset = ERC20(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270); //WMATIC
+            asset = ERC20(0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619); //WETH
             ONE_ASSET = 1e18;
-            highProfit = 50_000e18;
-            highLoss = 50_000e18;
+            highProfit = 100e18;
+            highLoss = 100e18;
             swapSlippageForHighProfit = 10_00;
             swapSlippageForHighLoss = 10_00;
             swapSlippageForHighLossPool = 20_00;

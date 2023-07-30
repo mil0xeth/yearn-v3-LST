@@ -8,7 +8,7 @@ interface IStrategyInterface is IStrategy {
     function balanceAsset() external view returns (uint256);
     function balanceLST() external view returns (uint256);
     function LST() external view returns (address);
-    function curve() external view returns(address);
+    function pool() external view returns(address);
     function maxSingleTrade() external view returns (uint256);
 
     function setSwapSlippage(uint256) external;

@@ -24,26 +24,17 @@ contract OperationTest is Setup {
 
     function test_operation_NoFees(uint256 _amount) public {
         console.log("strategy.address", address(strategy));
-        console.log("GAS BEFORE ASSUME", address(strategy).balance);
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-        console.log("GAS BEFORE SETPERF", address(strategy).balance);
         setPerformanceFeeToZero(address(strategy));
         // Deposit into strategy
-        console.log("strategy.address", address(strategy));
-        console.log("GAS BEFORE DEPOSIT", address(strategy).balance);
         mintAndDepositIntoStrategy(strategy, user, _amount);
-        console.log("GAS AFTER DEPOSIT", address(strategy).balance);
-
         checkStrategyTotals(strategy, _amount, _amount, 0);
-        console.log("GAS BEFORE SKIP", address(strategy).balance);
         // Earn Interest
         skip(10 days);
-        console.log("GAS AFTER SKIP", address(strategy).balance);
 
         // Report loss
         vm.prank(keeper);
         (uint256 profit, uint256 loss) = strategy.report();
-        console.log("GAS BEFORE SKIP", address(strategy).balance);
         checkStrategyInvariantsAfterReport(strategy);
         // Check return Values
         assertGe(profit, 0, "!profit");

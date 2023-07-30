@@ -178,11 +178,11 @@ contract OperationLossTest is Setup {
         console.log("loss after first report", loss);
         assertLe(address(strategy).balance, 100000000000000000);
 
-        //throw away LST in curve pool to simulate LST price deterioration
-        uint256 toThrow = (ERC20(LST).balanceOf(strategy.curve()) * _lossFactor) / MAX_BPS;
+        //throw away LST in pool pool to simulate LST price deterioration
+        uint256 toThrow = (ERC20(LST).balanceOf(strategy.pool()) * _lossFactor) / MAX_BPS;
  	    console.log("toThrow", toThrow);
-        address curve = strategy.curve();
-        vm.prank(curve);
+        address pool = strategy.pool();
+        vm.prank(pool);
         ERC20(LST).transfer(bucket, toThrow);
 
         // Report loss
@@ -235,11 +235,11 @@ contract OperationLossTest is Setup {
         console.log("loss after first report", loss);
         assertLe(address(strategy).balance, 100000000000000000);
 
-        //throw away LST in curve pool to simulate LST price deterioration
-        uint256 toThrow = (ERC20(LST).balanceOf(strategy.curve()) * _lossFactor) / MAX_BPS;
+        //throw away LST in pool pool to simulate LST price deterioration
+        uint256 toThrow = (ERC20(LST).balanceOf(strategy.pool()) * _lossFactor) / MAX_BPS;
  	    console.log("toThrow", toThrow);
-        address curve = strategy.curve();
-        vm.prank(curve);
+        address pool = strategy.pool();
+        vm.prank(pool);
         ERC20(LST).transfer(bucket, toThrow);
 
         // Report loss
@@ -253,7 +253,7 @@ contract OperationLossTest is Setup {
         uint256 toReturn = ERC20(LST).balanceOf(bucket);
         console.log("toReturn", toReturn);
         vm.prank(bucket);
-        ERC20(LST).transfer(curve, toReturn);
+        ERC20(LST).transfer(pool, toReturn);
 
         // Report return as profit
         vm.prank(keeper);
