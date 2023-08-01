@@ -6,6 +6,7 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
+import {IBalancer, IBalancerPool} from "./interfaces/Balancer/IBalancer.sol";
 import "./interfaces/Chainlink/AggregatorInterface.sol";
 
 /// @title yearn-v3-LST-POLYGON-WSTETH
@@ -16,7 +17,7 @@ contract Strategy is BaseTokenizedStrategy {
     address public constant LST = 0x03b54A6e9a984069379fae1a4fC4dBAE93B3bCCD; //WSTETH
     // Use chainlink oracle to check latest WSTETH/ETH price
     AggregatorInterface public chainlinkOracle = AggregatorInterface(0x10f964234cae09cB6a9854B56FF7D4F38Cda5E6a); //WSTETH/ETH
-    address public balancer = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
+    address public constant BALANCER = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
     address public pool = 0x65Fe9314bE50890Fb01457be076fAFD05Ff32B9A; //wsteth weth pool
 
     // Parameters    
@@ -26,15 +27,15 @@ contract Strategy is BaseTokenizedStrategy {
     uint256 internal constant WAD = 1e18;
     uint256 internal constant MAX_BPS = 100_00;
     uint256 internal constant ASSET_DUST = 1000;
-    address internal constant gov = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52; //yearn governance
+    address internal constant GOV = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52; //yearn governance
 
     constructor(address _asset, string memory _name) BaseTokenizedStrategy(_asset, _name) {
         //approvals:
-        ERC20(_asset).safeApprove(balancer, type(uint256).max);
-        ERC20(LST).safeApprove(balancer, type(uint256).max);
+        ERC20(_asset).safeApprove(BALANCER, type(uint256).max);
+        ERC20(LST).safeApprove(BALANCER, type(uint256).max);
 
-        maxSingleTrade = 80 * 1e18; //maximum amount that should be swapped in one go
-        swapSlippage = 3_00; //actual slippage for a trade
+        maxSingleTrade = 51 * 1e18; //maximum amount that should be swapped in one go
+        swapSlippage = 5_00; //actual maximum allowed slippage for a trade
     }
 
     receive() external payable {}
@@ -53,14 +54,14 @@ contract Strategy is BaseTokenizedStrategy {
         }
         uint256 minAmountOut = _amount * (MAX_BPS - swapSlippage) / MAX_BPS; //Account for slippage of the swap. In case oracle doesn't work, it's possible to offset the price expectation manually through swapSlippage
         uint256 LSTprice = uint256(chainlinkOracle.latestAnswer());
-        if (LSTprice > 0) {
+        if (LSTprice > 1) {
             minAmountOut = minAmountOut * WAD / LSTprice; //adjust minAmountOut by actual price (in emergency with chainlink price == 0, account for price with swapSlippage)
         }
         swapBalancer(address(asset), LST, _amount, minAmountOut);
     }
 
     function availableWithdrawLimit(address /*_owner*/) public view override returns (uint256) {
-        return maxSingleTrade;
+        return _balanceAsset() + maxSingleTrade;
     }
     
     function _freeFunds(uint256 _assetAmount) internal override {
@@ -76,7 +77,7 @@ contract Strategy is BaseTokenizedStrategy {
     function _unstake(uint256 _amount) internal {
         uint256 minAmountOut = _amount * (MAX_BPS - swapSlippage) / MAX_BPS; //Account for slippage of the swap. In case oracle doesn't work, it's possible to offset the price expectation manually through swapSlippage
         uint256 LSTprice = uint256(chainlinkOracle.latestAnswer());
-        if (LSTprice > 0) {
+        if (LSTprice > 1) {
             minAmountOut = minAmountOut * LSTprice / WAD; //adjust minAmountOut by actual price (in emergency with chainlink price == 0, account for price with swapSlippage)
         }
         swapBalancer(LST, address(asset), _amount, minAmountOut);
@@ -85,12 +86,12 @@ contract Strategy is BaseTokenizedStrategy {
     function _harvestAndReport() internal override returns (uint256 _totalAssets) {
         // deposit any loose asset in the strategy
         uint256 looseAsset = _balanceAsset();
-        if (looseAsset > 0 && !TokenizedStrategy.isShutdown()) {
+        if (looseAsset > ASSET_DUST && !TokenizedStrategy.isShutdown()) {
             _stake(Math.min(maxSingleTrade, looseAsset));
         }
         // Total assets of the strategy:
         uint256 LSTprice = uint256(chainlinkOracle.latestAnswer());
-        require(LSTprice > 0, "chainlink oracle is faulty!"); //block report when oracle is faulty to keep totalAssets equal to last report as best possible approximation 
+        require(LSTprice > 1, "chainlink oracle is faulty!"); //block report when oracle is faulty to keep totalAssets equal to last report as best possible approximation 
         _totalAssets = _balanceAsset() + _balanceLST() * LSTprice / WAD;
     }
 
@@ -114,7 +115,7 @@ contract Strategy is BaseTokenizedStrategy {
         funds.fromInternalBalance = true;
         funds.recipient = payable(this);
         funds.toInternalBalance = false;
-        IBalancer(balancer).swap(singleSwap, funds, _minAmountOut, block.timestamp);
+        IBalancer(BALANCER).swap(singleSwap, funds, _minAmountOut, block.timestamp);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -147,7 +148,7 @@ contract Strategy is BaseTokenizedStrategy {
     //////////////////////////////////////////////////////////////*/
 
     modifier onlyGovernance() {
-        require(msg.sender == gov, "!gov");
+        require(msg.sender == GOV, "!gov");
         _;
     }
 
@@ -172,32 +173,4 @@ contract Strategy is BaseTokenizedStrategy {
         _amount = Math.min(_amount, _balanceLST());
         _unstake(_amount);
     }
-}
-
-interface IBalancer {
-    struct SingleSwap {
-        bytes32 poolId;
-        uint8 kind;
-        address assetIn;
-        address assetOut;
-        uint256 amount;
-        bytes userData;
-    }
-    struct FundManagement {
-        address sender;
-        bool fromInternalBalance;
-        address payable recipient;
-        bool toInternalBalance;
-    }
-    function swap(
-        SingleSwap memory singleSwap,
-        FundManagement memory funds,
-        uint256 limit,
-        uint256 deadline
-    ) external payable returns (uint256);
-}
-
-interface IBalancerPool{
-    function getPoolId() external view returns (bytes32);
-    function getPrice() external view returns (uint256);
 }

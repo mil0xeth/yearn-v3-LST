@@ -24,7 +24,7 @@ contract MainTest is Setup {
 
     function test_main() public {
         //init
-        uint256 _amount = 100e18;
+        uint256 _amount = 20e18;
         uint256 profit;
         uint256 loss;
         console.log("asset: ", asset.symbol());

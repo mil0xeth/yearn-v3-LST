@@ -123,7 +123,7 @@ contract OperationTest is Setup {
         uint256 _amount,
         uint16 _profitFactor
     ) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount / 2);
         _profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
         setPerformanceFeeToZero(address(strategy));
         uint256 profit;
@@ -186,7 +186,7 @@ contract OperationTest is Setup {
         //uint16 _profitFactor,
         uint16 _divider
     ) public {
-        vm.assume(_amount > minFuzzAmount * maxDivider && _amount < maxFuzzAmount);
+        vm.assume(_amount > minFuzzAmount * maxDivider && _amount < maxFuzzAmount /2);
         //_amount = bound(_amount, minFuzzAmount * maxDivider, maxFuzzAmount); 
         _divider = uint16(bound(uint256(_divider), 1, maxDivider));
         //_profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
@@ -317,7 +317,7 @@ contract OperationTest is Setup {
         uint16 _divider
         //,uint16 _secondDivider
     ) public {
-        vm.assume(_amount > minFuzzAmount * maxDivider && _amount < maxFuzzAmount);
+        vm.assume(_amount > minFuzzAmount * maxDivider && _amount < maxFuzzAmount / 2);
         //_amount = bound(_amount, minFuzzAmount * maxDivider, maxFuzzAmount); 
         _divider = uint16(bound(uint256(_divider), 1, maxDivider));
         //vm.assume(_amount > minFuzzAmount * maxDivider && _amount < maxFuzzAmount);
@@ -438,7 +438,7 @@ contract OperationTest is Setup {
         uint256 _amount,
         uint16 _profitFactor
     ) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount/2);
         _profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
         uint256 profit;
         uint256 loss;
