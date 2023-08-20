@@ -15,22 +15,45 @@ contract ShutdownTest is Setup {
     */
 
     function testFail_withdrawAboveMaxSingleTrade() public {
-        uint256 _amount = strategy.maxSingleTrade() + 1; //just above maxSingleTrade
+        uint256 _amount = strategy.maxSingleTrade() + ONE_ASSET; //just above maxSingleTrade
         //mintAndDepositIntoStrategy(strategy, user, _amount);
         mintAndDepositIntoStrategy(strategy, user, _amount);
+        vm.prank(keeper);
+        strategy.report();
         vm.prank(user);
         strategy.redeem(_amount, user, user);
         checkStrategyInvariantsAfterRedeem(strategy);
     }
 
+    function test_chainlinkStaleDirectRedeem(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+        vm.prank(management);
+        strategy.setChainlinkHeartbeat(0);
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+        vm.prank(user);
+        strategy.redeem(_amount, user, user);
+        checkStrategyInvariantsAfterRedeem(strategy);
+        assertGe(asset.balanceOf(user) * (MAX_BPS + expectedActivityLossBPS)/MAX_BPS, _amount, "!final balance");
+    }
+
+    function testFail_chainlinkStaleHarvest(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+        vm.prank(management);
+        strategy.setChainlinkHeartbeat(0);
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+        vm.prank(keeper);
+        strategy.report();
+    }
 
     function test_shudownCanWithdraw(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        checkStrategyTotals(strategy, _amount, _amount, 0);
+        checkStrategyTotals(strategy, _amount, 0, _amount);
+        
+        vm.prank(keeper);
+        strategy.report();
 
         // Earn Interest
         skip(1 days);
@@ -39,8 +62,6 @@ contract ShutdownTest is Setup {
         vm.prank(management);
         strategy.shutdownStrategy();
 
-        checkStrategyTotals(strategy, _amount, _amount, 0);
-
         // Make sure we can still withdraw the full amount
         uint256 balanceBefore = asset.balanceOf(user);
 
@@ -48,10 +69,8 @@ contract ShutdownTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
 
-        // TODO: Adjust if there are fees
         checkStrategyTotals(strategy, 0, 0, 0);
         assertGe(asset.balanceOf(user)* (MAX_BPS + expectedActivityLossBPS*4)/MAX_BPS, balanceBefore + _amount, "!final balance");
     }
 
-    // TODO: Add tests for any emergency function added.
 }

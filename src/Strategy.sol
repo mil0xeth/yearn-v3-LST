@@ -17,6 +17,7 @@ contract Strategy is BaseTokenizedStrategy {
     address public constant LST = 0x03b54A6e9a984069379fae1a4fC4dBAE93B3bCCD; //WSTETH
     // Use chainlink oracle to check latest WSTETH/ETH price
     AggregatorInterface public chainlinkOracle = AggregatorInterface(0x10f964234cae09cB6a9854B56FF7D4F38Cda5E6a); //WSTETH/ETH
+    uint256 public chainlinkHeartbeat = 86400;
     address public constant BALANCER = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
     address public pool = 0x65Fe9314bE50890Fb01457be076fAFD05Ff32B9A; //wsteth weth pool
 
@@ -27,7 +28,7 @@ contract Strategy is BaseTokenizedStrategy {
     uint256 internal constant WAD = 1e18;
     uint256 internal constant MAX_BPS = 100_00;
     uint256 internal constant ASSET_DUST = 1000;
-    address internal constant GOV = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52; //yearn governance
+    address internal constant GOV = 0xC4ad0000E223E398DC329235e6C497Db5470B626; //yearn governance on polygon
 
     constructor(address _asset, string memory _name) BaseTokenizedStrategy(_asset, _name) {
         //approvals:
@@ -44,55 +45,46 @@ contract Strategy is BaseTokenizedStrategy {
                 INTERNAL
     //////////////////////////////////////////////////////////////*/
 
-    function _deployFunds(uint256 _amount) internal override {
-        _stake(_amount);
+    function _deployFunds(uint256 /*_amount*/) internal override {
+        //do nothing, we want to only have the keeper swap funds
+    }
+
+    function _LSTprice() internal view returns (uint256 LSTprice) {
+        (, int256 answer, , uint256 updatedAt, ) = chainlinkOracle.latestRoundData();
+        LSTprice = uint256(answer);
+        require((LSTprice > 1 && block.timestamp - updatedAt < chainlinkHeartbeat), "!chainlink");
     }
 
     function _stake(uint256 _amount) internal {
         if (_amount < ASSET_DUST) {
             return;
         }
-        uint256 minAmountOut = _amount * (MAX_BPS - swapSlippage) / MAX_BPS; //Account for slippage of the swap. In case oracle doesn't work, it's possible to offset the price expectation manually through swapSlippage
-        uint256 LSTprice = uint256(chainlinkOracle.latestAnswer());
-        if (LSTprice > 1) {
-            minAmountOut = minAmountOut * WAD / LSTprice; //adjust minAmountOut by actual price (in emergency with chainlink price == 0, account for price with swapSlippage)
-        }
-        swapBalancer(address(asset), LST, _amount, minAmountOut);
+        swapBalancer(asset, LST, _amount, _amount * WAD / _LSTprice() * (MAX_BPS - swapSlippage) / MAX_BPS); //adjust minAmountOut by actual price & account for slippage of the swap
     }
 
     function availableWithdrawLimit(address /*_owner*/) public view override returns (uint256) {
-        return _balanceAsset() + maxSingleTrade;
+        return TokenizedStrategy.totalIdle() + maxSingleTrade;
     }
     
     function _freeFunds(uint256 _assetAmount) internal override {
         //Unstake LST amount proportional to the shares redeemed:
-        uint256 LSTamountToUnstake = _balanceLST() * _assetAmount / TokenizedStrategy.totalAssets();
-        _unstake(LSTamountToUnstake);
-        uint256 assetBalance = _balanceAsset();
-        if (assetBalance > _assetAmount) { //did we swap too much?
-            _stake(assetBalance - _assetAmount); //in case we swapped too much to satisfy _assetAmount, swap rest back to LST
+        uint256 LSTamountToUnstake = _balanceLST() * _assetAmount / TokenizedStrategy.totalDebt();
+        if (LSTamountToUnstake > 2) {
+            _unstake(LSTamountToUnstake);
         }
     }
 
     function _unstake(uint256 _amount) internal {
-        uint256 minAmountOut = _amount * (MAX_BPS - swapSlippage) / MAX_BPS; //Account for slippage of the swap. In case oracle doesn't work, it's possible to offset the price expectation manually through swapSlippage
-        uint256 LSTprice = uint256(chainlinkOracle.latestAnswer());
-        if (LSTprice > 1) {
-            minAmountOut = minAmountOut * LSTprice / WAD; //adjust minAmountOut by actual price (in emergency with chainlink price == 0, account for price with swapSlippage)
-        }
-        swapBalancer(LST, address(asset), _amount, minAmountOut);
+        swapBalancer(LST, asset, _amount, _amount * _LSTprice() / WAD * (MAX_BPS - swapSlippage) / MAX_BPS); //adjust minAmountOut by actual price & account for slippage of the swap
     }
 
     function _harvestAndReport() internal override returns (uint256 _totalAssets) {
-        // deposit any loose asset in the strategy
-        uint256 looseAsset = _balanceAsset();
-        if (looseAsset > ASSET_DUST && !TokenizedStrategy.isShutdown()) {
-            _stake(Math.min(maxSingleTrade, looseAsset));
+        // invest any loose asset
+        if (!TokenizedStrategy.isShutdown()) {
+            _stake(Math.min(maxSingleTrade, _balanceAsset()));
         }
         // Total assets of the strategy:
-        uint256 LSTprice = uint256(chainlinkOracle.latestAnswer());
-        require(LSTprice > 1, "chainlink oracle is faulty!"); //block report when oracle is faulty to keep totalAssets equal to last report as best possible approximation 
-        _totalAssets = _balanceAsset() + _balanceLST() * LSTprice / WAD;
+        _totalAssets = _balanceAsset() + _balanceLST() * _LSTprice() / WAD;
     }
 
     function _balanceAsset() internal view returns (uint256) {
@@ -143,6 +135,11 @@ contract Strategy is BaseTokenizedStrategy {
         swapSlippage = _swapSlippage;
     }
 
+    /// @notice Set Chainlink heartbeat to determine what qualifies as stale data in units of seconds. 
+    function setChainlinkHeartbeat(uint256 _chainlinkHeartbeat) external onlyManagement {
+        chainlinkHeartbeat = _chainlinkHeartbeat;
+    }
+
     /*//////////////////////////////////////////////////////////////
                 GOVERNANCE:
     //////////////////////////////////////////////////////////////*/
@@ -168,7 +165,7 @@ contract Strategy is BaseTokenizedStrategy {
                 EMERGENCY:
     //////////////////////////////////////////////////////////////*/
 
-    // Emergency withdraw LST amount and swap. Best to do this in steps.
+    // Emergency swap LST amount. Best to do this in steps.
     function _emergencyWithdraw(uint256 _amount) internal override {
         _amount = Math.min(_amount, _balanceLST());
         _unstake(_amount);

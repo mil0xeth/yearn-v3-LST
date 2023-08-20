@@ -28,7 +28,7 @@ contract OperationTest is Setup {
         setPerformanceFeeToZero(address(strategy));
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
-        checkStrategyTotals(strategy, _amount, _amount, 0);
+        checkStrategyTotals(strategy, _amount, 0, _amount);
         // Earn Interest
         skip(10 days);
 
@@ -66,7 +66,7 @@ contract OperationTest is Setup {
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
-        checkStrategyTotals(strategy, _amount, _amount, 0);
+        checkStrategyTotals(strategy, _amount, 0, _amount);
 
         // Report loss
         vm.prank(keeper);
@@ -131,8 +131,7 @@ contract OperationTest is Setup {
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        checkStrategyTotals(strategy, _amount, _amount, 0);
+        checkStrategyTotals(strategy, _amount, 0, _amount);
         // Report loss
         vm.prank(keeper);
         (profit, loss) = strategy.report();
@@ -206,7 +205,7 @@ contract OperationTest is Setup {
         mintAndDepositIntoStrategy(strategy, user, _amount);
         mintAndDepositIntoStrategy(strategy, secondUser, secondUserAmount);
         mintAndDepositIntoStrategy(strategy, thirdUser, thirdUserAmount);
-        checkStrategyTotals(strategy, _amount + secondUserAmount + thirdUserAmount, _amount + secondUserAmount + thirdUserAmount, 0);
+        checkStrategyTotals(strategy, _amount + secondUserAmount + thirdUserAmount, 0, _amount + secondUserAmount + thirdUserAmount);
 
         // Report loss
         vm.prank(keeper);
@@ -341,7 +340,7 @@ contract OperationTest is Setup {
         mintAndDepositIntoStrategy(strategy, user, _amount);
         mintAndDepositIntoStrategy(strategy, secondUser, secondUserAmount);
         mintAndDepositIntoStrategy(strategy, thirdUser, thirdUserAmount);
-        checkStrategyTotals(strategy, _amount + secondUserAmount + thirdUserAmount, _amount + secondUserAmount + thirdUserAmount, 0);
+        checkStrategyTotals(strategy, _amount + secondUserAmount + thirdUserAmount, 0, _amount + secondUserAmount + thirdUserAmount);
 
         // Report loss
         vm.prank(keeper);
@@ -448,8 +447,7 @@ contract OperationTest is Setup {
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        checkStrategyTotals(strategy, _amount, _amount, 0);
+        checkStrategyTotals(strategy, _amount, 0, _amount);
 
         // Report loss
         vm.prank(keeper);
@@ -531,9 +529,7 @@ contract OperationTest is Setup {
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        
-        checkStrategyTotals(strategy, _amount, _amount, 0);
+        checkStrategyTotals(strategy, _amount, 0, _amount);
 
         // Report loss
         vm.prank(keeper);
@@ -616,9 +612,7 @@ contract OperationTest is Setup {
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
-
-        
-        checkStrategyTotals(strategy, _amount, _amount, 0);
+        checkStrategyTotals(strategy, _amount, 0, _amount);
 
         // Report loss
         vm.prank(keeper);
