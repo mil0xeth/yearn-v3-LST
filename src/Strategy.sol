@@ -165,7 +165,7 @@ contract Strategy is BaseTokenizedStrategy {
                 EMERGENCY:
     //////////////////////////////////////////////////////////////*/
 
-    // Emergency swap LST amount. Best to do this in steps.
+    // Emergency swap LST amount. Best to do this in steps. This can fail if there is more slippage than swapSlippage, which can be updated with setSwapSlippage if needed.
     function _emergencyWithdraw(uint256 _amount) internal override {
         _amount = Math.min(_amount, _balanceLST());
         _unstake(_amount);
