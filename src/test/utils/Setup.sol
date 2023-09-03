@@ -93,6 +93,7 @@ contract Setup is ExtendedTest, IEvents {
         //Polygon:
         if(vm.activeFork() == polygonFork) {
             asset = ERC20(0x7ceB23fD6bC0adD59E62ac25578270cFf1b9f619); //WETH
+            LST = 0x03b54A6e9a984069379fae1a4fC4dBAE93B3bCCD;
             ONE_ASSET = 1e18;
             highProfit = 25e18;
             highLoss = 100e18;
@@ -120,7 +121,8 @@ contract Setup is ExtendedTest, IEvents {
         strategy.setChainlinkHeartbeat(type(uint256).max); //block.timestamp in tests advances with days skipped while the chainlink updatedAt will not, so we need to ignore this in tests. There are additional tests for this specifically in Shutdown.t.sol.
         vm.prank(management);
         strategy.setSwapSlippage(15_00); //swapSlippage should be more relaxed in tests due to potential time disparity between chainlink and forked network
-        LST = strategy.LST();
+        vm.prank(management);
+        strategy.setProfitLimitRatio(1e18); //we don't want to revert in tests on too high profits from airdrops
     }
 
     function setUpStrategy() public returns (address) {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity 0.8.18;
-import {BaseTokenizedStrategy} from "@tokenized-strategy/BaseTokenizedStrategy.sol";
+import {BaseHealthCheck} from "@periphery/HealthCheck/BaseHealthCheck.sol";
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -12,13 +12,13 @@ import "./interfaces/Chainlink/AggregatorInterface.sol";
 /// @title yearn-v3-LST-POLYGON-WSTETH
 /// @author mil0x
 /// @notice yearn-v3 Strategy that stakes asset into Liquid Staking Token (LST).
-contract Strategy is BaseTokenizedStrategy {
+contract Strategy is BaseHealthCheck {
     using SafeERC20 for ERC20;
-    address public constant LST = 0x03b54A6e9a984069379fae1a4fC4dBAE93B3bCCD; //WSTETH
+    address internal constant LST = 0x03b54A6e9a984069379fae1a4fC4dBAE93B3bCCD; //WSTETH
     // Use chainlink oracle to check latest WSTETH/ETH price
     AggregatorInterface public chainlinkOracle = AggregatorInterface(0x10f964234cae09cB6a9854B56FF7D4F38Cda5E6a); //WSTETH/ETH
     uint256 public chainlinkHeartbeat = 86400;
-    address public constant BALANCER = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
+    address internal constant BALANCER = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
     address public pool = 0x65Fe9314bE50890Fb01457be076fAFD05Ff32B9A; //wsteth weth pool
 
     // Parameters    
@@ -26,17 +26,18 @@ contract Strategy is BaseTokenizedStrategy {
     uint256 public swapSlippage; //actual slippage for a trade including peg
 
     uint256 internal constant WAD = 1e18;
-    uint256 internal constant MAX_BPS = 100_00;
     uint256 internal constant ASSET_DUST = 1000;
     address internal constant GOV = 0xC4ad0000E223E398DC329235e6C497Db5470B626; //yearn governance on polygon
 
-    constructor(address _asset, string memory _name) BaseTokenizedStrategy(_asset, _name) {
+    constructor(address _asset, string memory _name) BaseHealthCheck(_asset, _name) {
         //approvals:
         ERC20(_asset).safeApprove(BALANCER, type(uint256).max);
         ERC20(LST).safeApprove(BALANCER, type(uint256).max);
 
         maxSingleTrade = 51 * 1e18; //maximum amount that should be swapped in one go
         swapSlippage = 5_00; //actual maximum allowed slippage for a trade
+
+        _setLossLimitRatio(5_00); // 5% acceptable loss in a report before we revert. Use the external setLossLimitRatio() function to change the value/circumvent this.
     }
 
     receive() external payable {}
@@ -85,6 +86,9 @@ contract Strategy is BaseTokenizedStrategy {
         }
         // Total assets of the strategy:
         _totalAssets = _balanceAsset() + _balanceLST() * _LSTprice() / WAD;
+
+        // Health check the amount to report.
+        _executeHealthCheck(_totalAssets);
     }
 
     function _balanceAsset() internal view returns (uint256) {
