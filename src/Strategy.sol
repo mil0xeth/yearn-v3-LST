@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity 0.8.18;
-import {BaseTokenizedStrategy} from "@tokenized-strategy/BaseTokenizedStrategy.sol";
+import {BaseHealthCheck} from "@periphery/HealthCheck/BaseHealthCheck.sol";
 
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -15,11 +15,11 @@ import "./interfaces/Chainlink/AggregatorInterface.sol";
 /// @title yearn-v3-LST-STETH
 /// @author mil0x
 /// @notice yearn-v3 Strategy that stakes asset into Liquid Staking Token (LST).
-contract Strategy is BaseTokenizedStrategy {
+contract Strategy is BaseHealthCheck {
     using SafeERC20 for ERC20;
 
-    address public constant LST = 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84; //STETH
-    address public constant withdrawalQueueLST = 0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1; //STETH withdrawal queue
+    address internal constant LST = 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84; //STETH
+    address internal constant withdrawalQueueLST = 0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1; //STETH withdrawal queue
     // Use chainlink oracle to check latest LST/asset price
     AggregatorInterface public chainlinkOracle = AggregatorInterface(0x86392dC19c0b719886221c78AB11eb8Cf5c52812); //STETH/ETH
     uint256 public chainlinkHeartbeat = 86400;
@@ -32,17 +32,18 @@ contract Strategy is BaseTokenizedStrategy {
     uint256 public swapSlippage; //actual slippage for a trade independent of the depeg; we check with chainlink for additional depeg
 
     uint256 internal constant WAD = 1e18;
-    uint256 internal constant MAX_BPS = 100_00;
     uint256 internal constant ASSET_DUST = 1000;
     address internal constant GOV = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52; //yearn governance
 
-    constructor(address _asset, string memory _name) BaseTokenizedStrategy(_asset, _name) {
+    constructor(address _asset, string memory _name) BaseHealthCheck(_asset, _name) {
         //approvals:
         ERC20(_asset).safeApprove(curve, type(uint256).max);
         ERC20(LST).safeApprove(curve, type(uint256).max);
 
         maxSingleTrade = 1_000 * 1e18; //maximum amount that should be swapped in one go
         swapSlippage = 200; //actual slippage for a trade independent of the depeg; we check with chainlink for additional depeg
+
+        _setLossLimitRatio(5_00); // 5% acceptable loss in a report before we revert. Use the external setLossLimitRatio() function to change the value/circumvent this.
     }
 
     receive() external payable {} //able to receive ETH
@@ -106,6 +107,9 @@ contract Strategy is BaseTokenizedStrategy {
         }
         // Total assets of the strategy:
         _totalAssets = _balanceAsset() + _balanceLST() * _getPessimisticLSTprice() / WAD; //use pessimistic price to make sure people cannot withdraw more than the current worth of the LST
+    
+        // Health check the amount to report.
+        _executeHealthCheck(_totalAssets);
     }
 
     function _getPessimisticLSTprice() internal view returns (uint256 LSTprice) {
@@ -196,6 +200,7 @@ contract Strategy is BaseTokenizedStrategy {
     /// @param _requestId return from calling initiateLSTwithdrawal() to identify the withdrawal.
     function claimLSTwithdrawal(uint256 _requestId) external onlyManagement {
         IQueue(withdrawalQueueLST).claimWithdrawal(_requestId);
+        IWETH(asset).deposit{value: address(this).balance}(); //ETH --> WETH
     }
 }
 

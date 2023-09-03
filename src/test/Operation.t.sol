@@ -87,6 +87,8 @@ contract OperationTest is Setup {
             vm.prank(management);
             strategy.setSwapSlippage(swapSlippageForHighProfit);
             console.log("setSwapSlippage"); 
+            vm.prank(management);
+            strategy.setLossLimitRatio(swapSlippageForHighProfit);
         }
 
         // Report profit
@@ -147,11 +149,13 @@ contract OperationTest is Setup {
         //profit simulation:
         uint256 toAirdrop = (_amount * _profitFactor) / MAX_BPS;
         console.log("toAirdrop", toAirdrop);
-        airdrop(strategy.LST(), address(strategy), toAirdrop);        
+        airdrop(LST, address(strategy), toAirdrop);        
         if (toAirdrop > highProfit) {
             vm.prank(management);
             strategy.setSwapSlippage(swapSlippageForHighProfit);
             console.log("setSwapSlippage"); 
+            vm.prank(management);
+            strategy.setLossLimitRatio(swapSlippageForHighProfit);
         }
 
         // Report profit
@@ -222,11 +226,13 @@ contract OperationTest is Setup {
         //profit simulation:
         uint256 toAirdrop = (_amount * _profitFactor) / MAX_BPS;
         console.log("toAirdrop", toAirdrop);
-        airdrop(strategy.LST(), address(strategy), toAirdrop);        
+        airdrop(LST, address(strategy), toAirdrop);        
         if (toAirdrop > highProfit) {
             vm.prank(management);
             strategy.setSwapSlippage(swapSlippageForHighProfit);
             console.log("setSwapSlippage"); 
+            vm.prank(management);
+            strategy.setLossLimitRatio(swapSlippageForHighProfit);
         }
 
         // Report profit
@@ -357,11 +363,13 @@ contract OperationTest is Setup {
         //profit simulation:
         uint256 toAirdrop = (_amount * _profitFactor) / MAX_BPS;
         console.log("toAirdrop", toAirdrop);
-        airdrop(strategy.LST(), address(strategy), toAirdrop);        
+        airdrop(LST, address(strategy), toAirdrop);        
         if (toAirdrop > highProfit) {
             vm.prank(management);
             strategy.setSwapSlippage(swapSlippageForHighProfit);
             console.log("setSwapSlippage"); 
+            vm.prank(management);
+            strategy.setLossLimitRatio(swapSlippageForHighProfit);
         }
 
         // Report profit
@@ -468,6 +476,8 @@ contract OperationTest is Setup {
             vm.prank(management);
             strategy.setSwapSlippage(swapSlippageForHighProfit);
             console.log("setSwapSlippage"); 
+            vm.prank(management);
+            strategy.setLossLimitRatio(swapSlippageForHighProfit);
         }
 
         // Report profit
@@ -548,11 +558,13 @@ contract OperationTest is Setup {
         //profit simulation:
         uint256 toAirdrop = (_amount * _profitFactor) / MAX_BPS;
         console.log("toAirdrop", toAirdrop);
-        airdrop(strategy.LST(), address(strategy), toAirdrop);        
+        airdrop(LST, address(strategy), toAirdrop);        
         if (toAirdrop > highProfit) {
             vm.prank(management);
             strategy.setSwapSlippage(swapSlippageForHighProfit);
             console.log("setSwapSlippage"); 
+            vm.prank(management);
+            strategy.setLossLimitRatio(swapSlippageForHighProfit);
         }
 
         // Report profit
@@ -633,11 +645,13 @@ contract OperationTest is Setup {
         //profit simulation:
         uint256 toAirdrop = (_amount * _profitFactor) / MAX_BPS;
         console.log("toAirdrop", toAirdrop);
-        airdrop(strategy.LST(), address(strategy), toAirdrop);        
+        airdrop(LST, address(strategy), toAirdrop);        
         if (toAirdrop > highProfit) {
             vm.prank(management);
             strategy.setSwapSlippage(swapSlippageForHighProfit);
             console.log("setSwapSlippage"); 
+            vm.prank(management);
+            strategy.setLossLimitRatio(swapSlippageForHighProfit);
         }
 
         // Report profit
