@@ -60,7 +60,7 @@ contract Strategy is BaseHealthCheck {
         if (_amount < ASSET_DUST) {
             return;
         }
-        swapBalancer(asset, LST, _amount, _amount * WAD / _LSTprice() * (MAX_BPS - swapSlippage) / MAX_BPS); //adjust minAmountOut by actual price & account for slippage of the swap
+        swapBalancer(address(asset), LST, _amount, _amount * WAD / _LSTprice() * (MAX_BPS - swapSlippage) / MAX_BPS); //adjust minAmountOut by actual price & account for slippage of the swap
     }
 
     function availableWithdrawLimit(address /*_owner*/) public view override returns (uint256) {
@@ -76,7 +76,7 @@ contract Strategy is BaseHealthCheck {
     }
 
     function _unstake(uint256 _amount) internal {
-        swapBalancer(LST, asset, _amount, _amount * _LSTprice() / WAD * (MAX_BPS - swapSlippage) / MAX_BPS); //adjust minAmountOut by actual price & account for slippage of the swap
+        swapBalancer(LST, address(asset), _amount, _amount * _LSTprice() / WAD * (MAX_BPS - swapSlippage) / MAX_BPS); //adjust minAmountOut by actual price & account for slippage of the swap
     }
 
     function _harvestAndReport() internal override returns (uint256 _totalAssets) {
@@ -86,9 +86,6 @@ contract Strategy is BaseHealthCheck {
         }
         // Total assets of the strategy:
         _totalAssets = _balanceAsset() + _balanceLST() * _LSTprice() / WAD;
-
-        // Health check the amount to report.
-        _executeHealthCheck(_totalAssets);
     }
 
     function _balanceAsset() internal view returns (uint256) {

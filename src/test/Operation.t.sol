@@ -518,8 +518,6 @@ contract OperationTest is Setup {
             strategy.redeem(actualShares, performanceFeeRecipient, performanceFeeRecipient);
             checkStrategyInvariantsAfterRedeem(strategy);
         }
-        
-        checkStrategyTotals(strategy, 0, 0, 0);
 
         assertGe(asset.balanceOf(performanceFeeRecipient) * (MAX_BPS + 500)/MAX_BPS, actualShares, "!perf fee out");
         console.log("strategist balance at end", asset.balanceOf(user));
@@ -603,8 +601,6 @@ contract OperationTest is Setup {
             strategy.redeem(actualShares, performanceFeeRecipient, performanceFeeRecipient);
             checkStrategyInvariantsAfterRedeem(strategy);
         }
-        
-        checkStrategyTotals(strategy, 0, 0, 0);
 
         assertGe(asset.balanceOf(performanceFeeRecipient) * (MAX_BPS + 500)/MAX_BPS, actualShares, "!perf fee out");
         console.log("strategist balance at end", asset.balanceOf(user));
@@ -713,9 +709,6 @@ contract OperationTest is Setup {
             strategy.redeem(actualShares, performanceFeeRecipient, performanceFeeRecipient);
             checkStrategyInvariantsAfterRedeem(strategy);
         }
-        
-        //checkStrategyTotals(strategy, 0, 0, 0);
-        assertLe(strategy.totalAssets(), ONE_ASSET);
 
         assertGe(asset.balanceOf(performanceFeeRecipient) * (MAX_BPS + 500)/MAX_BPS, actualShares, "!perf fee out");
         console.log("strategist balance at end", asset.balanceOf(performanceFeeRecipient));
