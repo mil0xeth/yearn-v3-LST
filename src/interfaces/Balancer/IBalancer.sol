@@ -27,4 +27,5 @@ interface IBalancer {
 interface IBalancerPool{
     function getPoolId() external view returns (bytes32);
     function getPrice() external view returns (uint256);
+    function getSwapFeePercentage() external view returns (uint256);
 }

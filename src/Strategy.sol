@@ -22,8 +22,10 @@ contract Strategy is BaseHealthCheck {
     address public pool = 0x65Fe9314bE50890Fb01457be076fAFD05Ff32B9A; //wsteth weth pool
 
     // Parameters    
-    uint256 public maxSingleTrade; //maximum amount that should be swapped in one go
+    uint256 public maxSingleTrade; //maximum amount that should be swapped by the keeper in one go
+    uint256 public maxSingleWithdraw; //maximum amount that should be withdrawn in one go
     uint256 public swapSlippage; //actual slippage for a trade including peg
+    uint256 public profitSlippage; //pessimistic correction to the profit to simulate having to realize the profit to asset
 
     uint256 internal constant WAD = 1e18;
     uint256 internal constant ASSET_DUST = 1000;
@@ -34,8 +36,10 @@ contract Strategy is BaseHealthCheck {
         ERC20(_asset).safeApprove(BALANCER, type(uint256).max);
         ERC20(LST).safeApprove(BALANCER, type(uint256).max);
 
-        maxSingleTrade = 51 * 1e18; //maximum amount that should be swapped in one go
+        maxSingleTrade = 51 * 1e18; //maximum amount that should be swapped by the keeper in one go
+        maxSingleWithdraw = 51 * 1e18; //maximum amount that should be withdrawn in one go
         swapSlippage = 5_00; //actual maximum allowed slippage for a trade
+        profitSlippage = 50; //pessimistic correction to the profit to simulate having to realize the profit to asset
 
         _setLossLimitRatio(5_00); // 5% acceptable loss in a report before we revert. Use the external setLossLimitRatio() function to change the value/circumvent this.
     }
@@ -64,7 +68,7 @@ contract Strategy is BaseHealthCheck {
     }
 
     function availableWithdrawLimit(address /*_owner*/) public view override returns (uint256) {
-        return TokenizedStrategy.totalIdle() + maxSingleTrade;
+        return TokenizedStrategy.totalIdle() + maxSingleWithdraw;
     }
     
     function _freeFunds(uint256 _assetAmount) internal override {
@@ -80,12 +84,22 @@ contract Strategy is BaseHealthCheck {
     }
 
     function _harvestAndReport() internal override returns (uint256 _totalAssets) {
+        uint256 oldTotalAssets = TokenizedStrategy.totalAssets();
         // invest any loose asset
         if (!TokenizedStrategy.isShutdown()) {
             _stake(Math.min(maxSingleTrade, _balanceAsset()));
         }
-        // Total assets of the strategy:
-        _totalAssets = _balanceAsset() + _balanceLST() * _LSTprice() / WAD;
+        // new total assets of the strategy: calculate LST price and correct by swap fee due to need to pay this amount no matter the withdrawal scenario
+        uint256 newTotalAssets = _balanceAsset() + _balanceLST() * _LSTprice() * (WAD - IBalancerPool(pool).getSwapFeePercentage()) / WAD / WAD;
+        // check if there was a profit:
+        if (newTotalAssets > oldTotalAssets) {
+            uint256 profit = newTotalAssets - oldTotalAssets;
+            // scenario with profit, pessimistically account for profit at a value as if it had been swapped back to asset with a swap slippage
+            _totalAssets = oldTotalAssets + profit * (MAX_BPS - profitSlippage) / MAX_BPS;
+        } else {
+            // scenario with no profit, simply report total assets
+            _totalAssets = newTotalAssets;
+        }
     }
 
     function _balanceAsset() internal view returns (uint256) {
@@ -125,15 +139,26 @@ contract Strategy is BaseHealthCheck {
         return _balanceLST();
     }
 
-    /// @notice Set the maximum amount of asset that can be withdrawn or can be moved by keepers in a single transaction. This is to avoid unnecessarily large slippages and incentivizes staggered withdrawals.
+    /// @notice Set the maximum amount of asset that can be moved by keepers in a single transaction. This is to avoid unnecessarily large slippages when harvesting.
     function setMaxSingleTrade(uint256 _maxSingleTrade) external onlyManagement {
         maxSingleTrade = _maxSingleTrade;
+    }
+
+    /// @notice Set the maximum amount of asset that can be withdrawn in a single transaction. This is to avoid unnecessarily large slippages and incentivizes staggered withdrawals.
+    function setMaxSingleWithdraw(uint256 _maxSingleWithdraw) external onlyManagement {
+        maxSingleWithdraw = _maxSingleWithdraw;
     }
 
     /// @notice Set the maximum slippage in basis points (BPS) to accept when swapping asset <-> staked asset in liquid staking token (LST).
     function setSwapSlippage(uint256 _swapSlippage) external onlyManagement {
         require(_swapSlippage <= MAX_BPS);
         swapSlippage = _swapSlippage;
+    }
+
+    /// @notice Set the profit slippage in basis points (BPS) to pessimistically correct the profit to reflect having to eventually swap it back to asset.
+    function setProfitSlippage(uint256 _profitSlippage) external onlyManagement {
+        require(_profitSlippage <= MAX_BPS);
+        profitSlippage = _profitSlippage;
     }
 
     /// @notice Set Chainlink heartbeat to determine what qualifies as stale data in units of seconds. 

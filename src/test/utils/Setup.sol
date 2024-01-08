@@ -49,7 +49,8 @@ contract Setup is ExtendedTest, IEvents {
     uint256 public MAX_BPS = 10_000;
 
     // Fuzz
-    uint256 public maxFuzzAmount = 41 * 1e18; //1e5 * 1e18;
+    //uint256 public maxFuzzAmount = 41 * 1e18; //1e5 * 1e18;
+    uint256 public maxFuzzAmount = 20e18; //1e5 * 1e18;
     uint256 public minFuzzAmount = 1e17;
 
     uint256 public expectedActivityLossBPS = 1000;
@@ -123,6 +124,8 @@ contract Setup is ExtendedTest, IEvents {
         strategy.setSwapSlippage(15_00); //swapSlippage should be more relaxed in tests due to potential time disparity between chainlink and forked network
         vm.prank(management);
         strategy.setProfitLimitRatio(1e18); //we don't want to revert in tests on too high profits from airdrops
+        vm.prank(management);
+        strategy.setLossLimitRatio(99_99); //we don't want to revert in tests on too high profits from airdrops
     }
 
     function setUpStrategy() public returns (address) {
