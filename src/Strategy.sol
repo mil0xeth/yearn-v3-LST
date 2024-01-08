@@ -89,8 +89,8 @@ contract Strategy is BaseHealthCheck {
         if (!TokenizedStrategy.isShutdown()) {
             _stake(Math.min(maxSingleTrade, _balanceAsset()));
         }
-        // new total assets of the strategy: calculate LST price and correct by swap fee due to need to pay this amount no matter the withdrawal scenario
-        uint256 newTotalAssets = _balanceAsset() + _balanceLST() * _LSTprice() * (WAD - IBalancerPool(pool).getSwapFeePercentage()) / WAD / WAD;
+        // new total assets of the strategy:
+        uint256 newTotalAssets = _balanceAsset() + _balanceLST() * _LSTprice() / WAD;
         // check if there was a profit:
         if (newTotalAssets > oldTotalAssets) {
             uint256 profit = newTotalAssets - oldTotalAssets;
