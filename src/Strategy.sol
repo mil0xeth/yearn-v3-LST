@@ -30,7 +30,7 @@ contract Strategy is BaseHealthCheck {
     uint256 public maxTendBasefee; //max amount the base fee can be for a tend to happen.
     uint256 public minDepositInterval; //minimum time between deposits to wait.
     uint256 public lastDeposit; //timestamp of the last deployment of funds.
-    bool public open; //bool if the strategy is open for any depositors.
+    bool public open = true; //bool if the strategy is open for any depositors.
     mapping(address => bool) public allowed; //mapping of addresses allowed to deposit.
 
     uint256 internal constant WAD = 1e18;
@@ -63,7 +63,7 @@ contract Strategy is BaseHealthCheck {
         //do nothing, we want to only have the keeper swap funds
     }
 
-    function _tend(uint256 /*_totalIdle*/) internal override notReentered {
+    function _tend(uint256 /*_totalIdle*/) internal override {
         if (!TokenizedStrategy.isShutdown()) {
             _stake(Math.min(maxSingleTrade, _balanceAsset()));
         }
@@ -76,6 +76,7 @@ contract Strategy is BaseHealthCheck {
         if (block.timestamp - lastDeposit > minDepositInterval && _balanceAsset() > depositTrigger) {
             return block.basefee < maxTendBasefee;
         }
+        return false;
     }
 
     function _LSTprice() internal view returns (uint256 LSTprice) {
