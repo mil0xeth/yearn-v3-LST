@@ -25,7 +25,13 @@ contract Strategy is BaseHealthCheck {
     uint256 public maxSingleTrade; //maximum amount that should be swapped by the keeper in one go
     uint256 public maxSingleWithdraw; //maximum amount that should be withdrawn in one go
     uint256 public swapSlippage; //actual slippage for a trade including peg
-    uint256 public profitSlippage; //pessimistic correction to the profit to simulate having to realize the profit to asset
+    uint256 public bufferSlippage; //pessimistic buffer to the totalAssets to simulate having to realize the LST to asset
+    uint256 public depositTrigger; //amount in asset that will trigger a tend if idle.
+    uint256 public maxTendBasefee; //max amount the base fee can be for a tend to happen.
+    uint256 public minDepositInterval; //minimum time between deposits to wait.
+    uint256 public lastDeposit; //timestamp of the last deployment of funds.
+    bool public open; //bool if the strategy is open for any depositors.
+    mapping(address => bool) public allowed; //mapping of addresses allowed to deposit.
 
     uint256 internal constant WAD = 1e18;
     uint256 internal constant ASSET_DUST = 1000;
@@ -39,9 +45,12 @@ contract Strategy is BaseHealthCheck {
         maxSingleTrade = 51 * 1e18; //maximum amount that should be swapped by the keeper in one go
         maxSingleWithdraw = 51 * 1e18; //maximum amount that should be withdrawn in one go
         swapSlippage = 5_00; //actual maximum allowed slippage for a trade
-        profitSlippage = 50; //pessimistic correction to the profit to simulate having to realize the profit to asset
+        bufferSlippage = 100; //pessimistic correction to the totalAssets to simulate having to realize the LST to asset and thus virtually create a buffer for swapping
+        depositTrigger = 1e17; //default the default trigger to half the max trade
+        maxTendBasefee = 100e9; //default max tend fee to 100 gwei
+        minDepositInterval = 60 * 60 * 6; //default min deposit interval to 6 hours
 
-        _setLossLimitRatio(5_00); // 5% acceptable loss in a report before we revert. Use the external setLossLimitRatio() function to change the value/circumvent this.
+        _setLossLimitRatio(50); // 0.5% acceptable loss in a report before we revert. Use the external setLossLimitRatio() function to change the value/circumvent this.
     }
 
     receive() external payable {}
@@ -52,6 +61,21 @@ contract Strategy is BaseHealthCheck {
 
     function _deployFunds(uint256 /*_amount*/) internal override {
         //do nothing, we want to only have the keeper swap funds
+    }
+
+    function _tend(uint256 /*_totalIdle*/) internal override notReentered {
+        if (!TokenizedStrategy.isShutdown()) {
+            _stake(Math.min(maxSingleTrade, _balanceAsset()));
+        }
+    }
+
+    function _tendTrigger() internal view override returns (bool) {
+        if (TokenizedStrategy.isShutdown()) {
+            return false;
+        }
+        if (block.timestamp - lastDeposit > minDepositInterval && _balanceAsset() > depositTrigger) {
+            return block.basefee < maxTendBasefee;
+        }
     }
 
     function _LSTprice() internal view returns (uint256 LSTprice) {
@@ -65,6 +89,15 @@ contract Strategy is BaseHealthCheck {
             return;
         }
         swapBalancer(address(asset), LST, _amount, _amount * WAD / _LSTprice() * (MAX_BPS - swapSlippage) / MAX_BPS); //adjust minAmountOut by actual price & account for slippage of the swap
+    }
+
+    function availableDepositLimit(address _owner) public view override returns (uint256) {
+        // If the owner is whitelisted or the strategy is open.
+        if (open || allowed[_owner]) {
+            return type(uint256).max;
+        } else {
+            return 0;
+        }
     }
 
     function availableWithdrawLimit(address /*_owner*/) public view override returns (uint256) {
@@ -84,22 +117,12 @@ contract Strategy is BaseHealthCheck {
     }
 
     function _harvestAndReport() internal override returns (uint256 _totalAssets) {
-        uint256 oldTotalAssets = TokenizedStrategy.totalAssets();
         // invest any loose asset
         if (!TokenizedStrategy.isShutdown()) {
             _stake(Math.min(maxSingleTrade, _balanceAsset()));
         }
-        // new total assets of the strategy:
-        uint256 newTotalAssets = _balanceAsset() + _balanceLST() * _LSTprice() / WAD;
-        // check if there was a profit:
-        if (newTotalAssets > oldTotalAssets) {
-            uint256 profit = newTotalAssets - oldTotalAssets;
-            // scenario with profit, pessimistically account for profit at a value as if it had been swapped back to asset with a swap slippage
-            _totalAssets = oldTotalAssets + profit * (MAX_BPS - profitSlippage) / MAX_BPS;
-        } else {
-            // scenario with no profit, simply report total assets
-            _totalAssets = newTotalAssets;
-        }
+        // new total assets of the strategy, pessimistically account for LST at a value as if it had been swapped back to asset with the swap fee and a virtual swap slippage
+        _totalAssets = _balanceAsset() + _balanceLST() * _LSTprice() * (WAD - IBalancerPool(pool).getSwapFeePercentage()) * (MAX_BPS - bufferSlippage) / WAD / WAD / MAX_BPS;
     }
 
     function _balanceAsset() internal view returns (uint256) {
@@ -155,10 +178,37 @@ contract Strategy is BaseHealthCheck {
         swapSlippage = _swapSlippage;
     }
 
-    /// @notice Set the profit slippage in basis points (BPS) to pessimistically correct the profit to reflect having to eventually swap it back to asset.
-    function setProfitSlippage(uint256 _profitSlippage) external onlyManagement {
-        require(_profitSlippage <= MAX_BPS);
-        profitSlippage = _profitSlippage;
+    /// @notice Set the buffer slippage in basis points (BPS) to pessimistically correct the totalAssets to reflect having to eventually swap LST back to asset and thus create a buffer for swaps.
+    function setBufferSlippage(uint256 _bufferSlippage) external onlyManagement {
+        require(_bufferSlippage <= MAX_BPS);
+        bufferSlippage = _bufferSlippage;
+    }
+
+    /// @notice Set the max base fee for tending to occur at.
+    function setMaxTendBasefee(uint256 _maxTendBasefee) external onlyManagement {
+        maxTendBasefee = _maxTendBasefee;
+    }
+
+    /// @notice Set the amount in asset that should trigger a tend if idle.
+    function setDepositTrigger(uint256 _depositTrigger) external onlyManagement {
+        depositTrigger = _depositTrigger;
+    }
+
+    /// @notice Set the minimum deposit wait time.
+    function setDepositInterval(uint256 _newDepositInterval) external onlyManagement {
+        // Cannot set to 0.
+        require(_newDepositInterval > 0, "interval too low");
+        minDepositInterval = _newDepositInterval;
+    }
+
+    // Change if anyone can deposit in or only white listed addresses
+    function setOpen(bool _open) external onlyManagement {
+        open = _open;
+    }
+
+    // Set or update an addresses whitelist status.
+    function setAllowed(address _address, bool _allowed) external onlyManagement {
+        allowed[_address] = _allowed;
     }
 
     /// @notice Set Chainlink heartbeat to determine what qualifies as stale data in units of seconds. 
