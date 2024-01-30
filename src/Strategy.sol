@@ -176,7 +176,7 @@ contract Strategy is BaseHealthCheck {
     }
 
     /// @notice Set the maximum slippage in basis points (BPS) to accept when swapping asset <-> staked asset in liquid staking token (LST).
-    function setSwapSlippage(uint256 _swapSlippage) external onlyManagement {
+    function setSwapSlippage(uint256 _swapSlippage) external onlyEmergencyAuthorized {
         require(_swapSlippage <= MAX_BPS);
         swapSlippage = _swapSlippage;
     }
@@ -205,12 +205,12 @@ contract Strategy is BaseHealthCheck {
     }
 
     // Change if anyone can deposit in or only white listed addresses
-    function setOpen(bool _open) external onlyManagement {
+    function setOpen(bool _open) external onlyEmergencyAuthorized {
         open = _open;
     }
 
     // Set or update an addresses whitelist status.
-    function setAllowed(address _address, bool _allowed) external onlyManagement {
+    function setAllowed(address _address, bool _allowed) external onlyEmergencyAuthorized {
         allowed[_address] = _allowed;
     }
 
