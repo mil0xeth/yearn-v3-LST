@@ -91,6 +91,7 @@ contract Strategy is BaseHealthCheck {
             return;
         }
         swapBalancer(address(asset), LST, _amount, _assetToLST(_amount) * (MAX_BPS - swapSlippage) / MAX_BPS); //minAmountOut in LST, account for swapping slippage
+        lastDeposit = block.timestamp;
     }
 
     function _assetToLST(uint256 _assetAmount) internal view returns (uint256) {
