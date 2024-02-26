@@ -3,8 +3,8 @@ pragma solidity >=0.8.15;
 
 interface ICurve {
     function exchange(
-        uint256 from,
-        uint256 to,
+        int128 from,
+        int128 to,
         uint256 _from_amount,
         uint256 _min_to_amount
     ) external payable returns(uint256);

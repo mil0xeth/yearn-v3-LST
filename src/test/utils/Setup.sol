@@ -49,12 +49,12 @@ contract Setup is ExtendedTest, IEvents {
     uint256 public MAX_BPS = 10_000;
 
     // Fuzz
-    uint256 public maxFuzzAmount = 50_000 * 1e18; //1e5 * 1e18;
-    uint256 public minFuzzAmount = 1e17;
+    uint256 public maxFuzzAmount = 1e3 * 1e18; //1e5 * 1e18;
+    uint256 public minFuzzAmount = 1e15;
 
-    uint256 public expectedActivityLossBPS = 800;
-    uint256 public expectedActivityLossMultipleUsersBPS = 1000;
-    uint256 public expectedProfitReductionBPS = 500;
+    uint256 public expectedActivityLossBPS = 100;
+    uint256 public expectedActivityLossMultipleUsersBPS = 100;
+    uint256 public expectedProfitReductionBPS = 100;
     uint256 public ONE_ASSET;
     uint256 public highProfit;
     uint256 public highLoss;
@@ -74,8 +74,8 @@ contract Setup is ExtendedTest, IEvents {
         //uint256 optimismFork = vm.createFork("optimism");
         //uint256 arbitrumFork = vm.createFork("arbitrum");
 
-        //vm.selectFork(mainnetFork);
-        vm.selectFork(polygonFork);
+        vm.selectFork(mainnetFork);
+        //vm.selectFork(polygonFork);
         //vm.selectFork(avaxFork);
         //vm.selectFork(optimismFork);
         //vm.selectFork(arbitrumFork);
@@ -84,16 +84,17 @@ contract Setup is ExtendedTest, IEvents {
         //MAINNET:
         if(vm.activeFork() == mainnetFork) {
             asset = ERC20(0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2); //WETH
+            LST = 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84; //STETH
             ONE_ASSET = 1e18;
-            highProfit = 300e18;
-            highLoss = 300e18;
+            highProfit = 30e18;
+            highLoss = 30e18;
             swapSlippageForHighProfit = 5_00;
             swapSlippageForHighLoss = 5_00;
         }
         //Polygon:
         if(vm.activeFork() == polygonFork) {
             asset = ERC20(0x0d500B1d8E8eF31E21C99d1Db9A6444d3ADf1270); //WMATIC
-            LST = 0x3A58a54C066FdC0f2D55FC9C89F0415C92eBf3C4;
+            LST = 0x3A58a54C066FdC0f2D55FC9C89F0415C92eBf3C4; //STMATIC
             ONE_ASSET = 1e18;
             highProfit = 50_000e18;
             highLoss = 50_000e18;
@@ -182,6 +183,12 @@ contract Setup is ExtendedTest, IEvents {
     function airdrop(address _asset, address _to, uint256 _amount) public {
         uint256 balanceBefore = ERC20(_asset).balanceOf(_to);
         deal(_asset, _to, balanceBefore + _amount);
+    }
+    
+    function airdropLST(address _asset, address _to, uint256 _amount) public {
+        address LSTWHALE = 0x1982b2F5814301d4e9a8b0201555376e62F82428;
+        vm.prank(LSTWHALE);
+        ERC20(LST).transfer(_to, _amount);
     }
 
     function checkStrategyInvariantsAfterReport(IStrategyInterface _strategy) public {

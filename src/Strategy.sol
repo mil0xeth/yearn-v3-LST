@@ -6,21 +6,30 @@ import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
-import "./interfaces/Chainlink/AggregatorInterface.sol";
-import {IBalancer, IBalancerPool} from "./interfaces/Balancer/IBalancer.sol";
+import "./interfaces/Lido/IWETH.sol";
+import "./interfaces/Lido/ISTETH.sol";
+import "./interfaces/Lido/IWSTETH.sol";
+import "./interfaces/Lido/IQueue.sol";
 
-/// @title yearn-v3-LST-POLYGON-STMATIC
+import {ICurve} from "./interfaces/Curve/Curve.sol";
+
+import "./interfaces/Chainlink/AggregatorInterface.sol";
+
+/// @title yearn-v3-LST-MAINNET-STETH
 /// @author mil0x
 /// @notice yearn-v3 Strategy that stakes asset into Liquid Staking Token (LST).
 contract Strategy is BaseHealthCheck {
     using SafeERC20 for ERC20;
-    address internal constant LST = 0x3A58a54C066FdC0f2D55FC9C89F0415C92eBf3C4; //STMATIC
-    // Use chainlink oracle to check LST price
-    AggregatorInterface public chainlinkOracleAsset = AggregatorInterface(0xAB594600376Ec9fD91F8e885dADF0CE036862dE0); //matic/usd
-    AggregatorInterface public chainlinkOracleLST = AggregatorInterface(0x97371dF4492605486e23Da797fA68e55Fc38a13f); //stmatic/usd
-    uint256 public chainlinkHeartbeat = 60;
-    address internal constant BALANCER = 0xBA12222222228d8Ba445958a75a0704d566BF2C8;
-    address public pool = 0xf0ad209e2e969EAAA8C882aac71f02D8a047d5c2; //stmatic wmatic pool
+
+    address internal constant LST = 0xae7ab96520DE3A18E5e111B5EaAb095312D7fE84; //STETH
+    address internal constant withdrawalQueueLST = 0x889edC2eDab5f40e902b864aD4d7AdE8E412F9B1; //STETH withdrawal queue
+    // Use chainlink oracle to check latest LST/asset price
+    AggregatorInterface public chainlinkOracle = AggregatorInterface(0x86392dC19c0b719886221c78AB11eb8Cf5c52812); //STETH/ETH
+    uint256 public chainlinkHeartbeat = 86400;
+    address public curve = 0xDC24316b9AE028F1497c275EB9192a3Ea0f67022; //curve_ETH_STETH
+    int128 internal constant ASSETID = 0;
+    int128 internal constant LSTID = 1;
+
     uint256 public swapFeePercentage;
 
     // Parameters    
@@ -36,22 +45,21 @@ contract Strategy is BaseHealthCheck {
     mapping(address => bool) public allowed; //mapping of addresses allowed to deposit.
 
     uint256 internal constant WAD = 1e18;
-    uint256 internal constant ASSET_DUST = 100000;
-    address internal constant GOV = 0xC4ad0000E223E398DC329235e6C497Db5470B626; //yearn governance on polygon
+    uint256 internal constant ASSET_DUST = 1000;
+    address internal constant GOV = 0xFEB4acf3df3cDEA7399794D0869ef76A6EfAff52; //yearn governance
 
     constructor(address _asset, string memory _name) BaseHealthCheck(_asset, _name) {
         //approvals:
-        ERC20(_asset).safeApprove(BALANCER, type(uint256).max);
-        ERC20(LST).safeApprove(BALANCER, type(uint256).max);
+        ERC20(_asset).safeApprove(curve, type(uint256).max);
+        ERC20(LST).safeApprove(curve, type(uint256).max);
 
-        maxSingleTrade = 10_000 * 1e18; //maximum amount that should be swapped by the keeper in one go
-        maxSingleWithdraw = 50_000 * 1e18; //maximum amount that should be withdrawn in one go
-        swapSlippage = 2_00; //actual slippage for a trade
-        bufferSlippage = 100; //pessimistic correction to the totalAssets to simulate having to realize the LST to asset and thus virtually create a buffer for swapping
-        depositTrigger = 1e17; //default the default trigger to half the max trade
-        maxTendBasefee = 100e9; //default max tend fee to 100 gwei
+        maxSingleTrade = 20 * 1e18; //maximum amount that should be swapped by the keeper in one go
+        maxSingleWithdraw = 1000 * 1e18; //maximum amount that should be withdrawn in one go
+        swapSlippage = 1_00; //actual slippage for a trade
+        bufferSlippage = 50; //pessimistic correction to the totalAssets to simulate having to realize the LST to asset and thus virtually create a buffer for swapping
+        depositTrigger = 5e18;
+        maxTendBasefee = 30e9; //default max tend fee to 100 gwei
         minDepositInterval = 60 * 60 * 6; //default min deposit interval to 6 hours
-        swapFeePercentage = IBalancerPool(pool).getSwapFeePercentage();
     }
 
     receive() external payable {}
@@ -80,6 +88,12 @@ contract Strategy is BaseHealthCheck {
         return false;
     }
 
+    function _LSTprice() internal view returns (uint256 LSTprice) {
+        (, int256 answer, , uint256 updatedAt, ) = chainlinkOracle.latestRoundData();
+        LSTprice = uint256(answer);
+        require((LSTprice > 1 && block.timestamp - updatedAt < chainlinkHeartbeat), "!chainlink");
+    }
+
     function _chainlinkPrice(AggregatorInterface _chainlinkOracle) internal view returns (uint256 price) {
         (, int256 answer, , uint256 updatedAt, ) = _chainlinkOracle.latestRoundData();
         price = uint256(answer);
@@ -87,23 +101,16 @@ contract Strategy is BaseHealthCheck {
     }
 
     function _stake(uint256 _amount) internal {
-        if (_amount < ASSET_DUST) {
+        if(_amount < ASSET_DUST){
             return;
         }
-        swapBalancer(address(asset), LST, _amount, _assetToLST(_amount) * (MAX_BPS - swapSlippage) / MAX_BPS); //minAmountOut in LST, account for swapping slippage
+        IWETH(address(asset)).withdraw(_amount); //WETH --> ETH
+        if(ICurve(curve).get_dy(ASSETID, LSTID, _amount) < _amount){ //check if we receive more than 1:1 through swaps
+            ISTETH(LST).submit{value: _amount}(GOV); //stake 1:1
+        }else{
+            ICurve(curve).exchange{value: _amount}(ASSETID, LSTID, _amount, _amount); //swap for at least 1:1
+        }
         lastDeposit = block.timestamp;
-    }
-
-    function _assetToLST(uint256 _assetAmount) internal view returns (uint256) {
-        uint256 assetPrice = _chainlinkPrice(chainlinkOracleAsset);
-        uint256 LSTprice = _chainlinkPrice(chainlinkOracleLST);
-        return _assetAmount * assetPrice / LSTprice;
-    }
-
-    function _LSTtoAsset(uint256 _LSTamount) internal view returns (uint256) {
-        uint256 assetPrice = _chainlinkPrice(chainlinkOracleAsset);
-        uint256 LSTprice = _chainlinkPrice(chainlinkOracleLST);
-        return _LSTamount * LSTprice / assetPrice;
     }
 
     function availableDepositLimit(address _owner) public view override returns (uint256) {
@@ -116,10 +123,6 @@ contract Strategy is BaseHealthCheck {
     }
 
     function availableWithdrawLimit(address /*_owner*/) public view override returns (uint256) {
-        (bool paused, , ) = IBalancerPool(pool).getPausedState();
-        if (paused) {
-            return TokenizedStrategy.totalIdle();
-        }
         return TokenizedStrategy.totalIdle() + maxSingleWithdraw;
     }
     
@@ -132,20 +135,39 @@ contract Strategy is BaseHealthCheck {
     }
 
     function _unstake(uint256 _amount) internal {
-        swapBalancer(LST, address(asset), _amount, _LSTtoAsset(_amount) * (MAX_BPS - swapSlippage) / MAX_BPS); //minAmountOut in asset, account for swapping slippage
+        uint256 expectedAmountOut = _amount * (MAX_BPS - swapSlippage) / MAX_BPS; //Without oracle we expect 1:1, but can offset that expectation with swapSlippage
+        if (address(chainlinkOracle) != address(0)){ //Check if chainlink oracle is set
+            expectedAmountOut = expectedAmountOut * _LSTprice() / WAD; //adjust expectedAmountOut by actual depeg
+        }
+        ICurve(curve).exchange(LSTID, ASSETID, _amount, expectedAmountOut);
+        IWETH(address(asset)).deposit{value: address(this).balance}(); //ETH --> WETH
     }
 
     function _harvestAndReport() internal override returns (uint256 _totalAssets) {
+        // deposit any loose gas
+        uint256 balance = address(this).balance;
+        if (balance > 0) {
+            IWETH(address(asset)).deposit{value: balance}();
+        }
+
         // invest any loose asset
         if (!TokenizedStrategy.isShutdown()) {
             _stake(Math.min(maxSingleTrade, _balanceAsset()));
         }
-        // new total assets of the strategy, pessimistically account for LST at a value as if it had been swapped back to asset with the swap fee and a virtual swap slippage
-        _totalAssets = _balanceAsset() + _LSTtoAsset(_balanceLST()) * (WAD - swapFeePercentage) * (MAX_BPS - bufferSlippage) / WAD / MAX_BPS;
+
+        // Total assets of the strategy, pessimistically account for LST at a value as if it had been swapped back to asset with a virtual buffer slippage
+        _totalAssets = _balanceAsset() + _balanceLST() * _getPessimisticLSTprice() * (MAX_BPS - bufferSlippage) / WAD / MAX_BPS;
+    }
+
+    function _getPessimisticLSTprice() internal view returns (uint256 LSTprice) {
+        LSTprice = ICurve(curve).get_dy(LSTID, ASSETID, WAD); //price estimate and fee determined through actual swap route
+        if (address(chainlinkOracle) != address(0)){ //Check if chainlink oracle is set
+            LSTprice = Math.min(LSTprice, _LSTprice()); //use pessimistic price to make sure people cannot withdraw more than the current worth of the LST
+        }
     }
 
     function _balanceAsset() internal view returns (uint256) {
-        return ERC20(asset).balanceOf(address(this));
+        return asset.balanceOf(address(this));
     }
 
     function _balanceLST() internal view returns (uint256){
@@ -220,21 +242,6 @@ contract Strategy is BaseHealthCheck {
         chainlinkHeartbeat = _chainlinkHeartbeat;
     }
 
-    function swapBalancer(address _tokenIn, address _tokenOut, uint256 _amount, uint256 _minAmountOut) internal {
-        IBalancer.SingleSwap memory singleSwap;
-        singleSwap.poolId = IBalancerPool(pool).getPoolId();
-        singleSwap.kind = 0;
-        singleSwap.assetIn = _tokenIn;
-        singleSwap.assetOut = _tokenOut;
-        singleSwap.amount = _amount;
-        IBalancer.FundManagement memory funds;
-        funds.sender = address(this);
-        funds.fromInternalBalance = true;
-        funds.recipient = payable(this);
-        funds.toInternalBalance = false;
-        IBalancer(BALANCER).swap(singleSwap, funds, _minAmountOut, block.timestamp);
-    }
-
     /*//////////////////////////////////////////////////////////////
                 GOVERNANCE:
     //////////////////////////////////////////////////////////////*/
@@ -244,19 +251,17 @@ contract Strategy is BaseHealthCheck {
         _;
     }
 
-    /// @notice Set the balancer pool address in case TVL has migrated to a new balancer pool. Only callable by governance.
-    function setPool(address _pool) external onlyGovernance {
-        require(_pool != address(0));
-        pool = _pool;
-        swapFeePercentage = IBalancerPool(_pool).getSwapFeePercentage();
+    /// @notice Set the curve router address in case TVL has migrated to a new curve pool. Only callable by governance.
+    function setCurveRouter(address _curve) external onlyGovernance {
+        require(_curve != address(0));
+        ERC20(asset).safeApprove(_curve, type(uint256).max);
+        ERC20(LST).safeApprove(_curve, type(uint256).max);
+        curve = _curve;
     }
 
-    /// @notice Set the chainlink oracle address to a new address. Only callable by governance.
-    function setChainlinkOracle(address _chainlinkOracleAsset, address _chainlinkOracleLST) external onlyGovernance {
-        require(_chainlinkOracleAsset != address(0));
-        require(_chainlinkOracleLST != address(0));
-        chainlinkOracleAsset = AggregatorInterface(_chainlinkOracleAsset);
-        chainlinkOracleLST = AggregatorInterface(_chainlinkOracleLST);
+    /// @notice Set the chainlink oracle address to a new address. Can be set to address(0) to circumvent chainlink pricing. Only callable by governance.
+    function setChainlinkOracle(address _chainlinkOracle) external onlyGovernance {
+        chainlinkOracle = AggregatorInterface(_chainlinkOracle);
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -267,5 +272,19 @@ contract Strategy is BaseHealthCheck {
     function _emergencyWithdraw(uint256 _amount) internal override {
         _amount = Math.min(_amount, _balanceLST());
         _unstake(_amount);
+    }
+
+    /// @notice Initiate a liquid staking token (LST) withdrawal process to redeem 1:1. Returns requestIds which can be used to claim asset into the strategy.
+    /// @param _amounts the amounts of LST to initiate a withdrawal process for.
+    function initiateLSTwithdrawal(uint256[] calldata _amounts) external onlyManagement returns (uint256[] memory requestIds) {
+        ERC20(LST).safeApprove(withdrawalQueueLST, type(uint256).max);
+        requestIds = IQueue(withdrawalQueueLST).requestWithdrawals(_amounts, address(this));
+    }
+
+    /// @notice Claim asset from a liquid staking token (LST) withdrawal process to redeem 1:1. Use the requestId from initiateLSTwithdrawal() as argument.
+    /// @param _requestId return from calling initiateLSTwithdrawal() to identify the withdrawal.
+    function claimLSTwithdrawal(uint256 _requestId) external onlyManagement {
+        IQueue(withdrawalQueueLST).claimWithdrawal(_requestId);
+        IWETH(address(asset)).deposit{value: address(this).balance}(); //ETH --> WETH
     }
 }
