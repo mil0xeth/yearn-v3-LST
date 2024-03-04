@@ -26,7 +26,7 @@ contract Strategy is BaseHealthCheck {
     // Use chainlink oracle to check latest LST/asset price
     AggregatorInterface public chainlinkOracle = AggregatorInterface(0x86392dC19c0b719886221c78AB11eb8Cf5c52812); //STETH/ETH
     uint256 public chainlinkHeartbeat = 86400;
-    address public curve = 0xDC24316b9AE028F1497c275EB9192a3Ea0f67022; //curve_ETH_STETH
+    address public constant curve = 0xDC24316b9AE028F1497c275EB9192a3Ea0f67022; //curve_ETH_STETH
     int128 internal constant ASSETID = 0;
     int128 internal constant LSTID = 1;
 
@@ -52,8 +52,9 @@ contract Strategy is BaseHealthCheck {
         //approvals:
         ERC20(_asset).safeApprove(curve, type(uint256).max);
         ERC20(LST).safeApprove(curve, type(uint256).max);
+        ERC20(LST).safeApprove(withdrawalQueueLST, type(uint256).max);
 
-        maxSingleTrade = 20 * 1e18; //maximum amount that should be swapped by the keeper in one go
+        maxSingleTrade = 1000 * 1e18; //maximum amount that should be swapped by the keeper in one go
         maxSingleWithdraw = 1000 * 1e18; //maximum amount that should be withdrawn in one go
         swapSlippage = 1_00; //actual slippage for a trade
         bufferSlippage = 50; //pessimistic correction to the totalAssets to simulate having to realize the LST to asset and thus virtually create a buffer for swapping
@@ -68,14 +69,12 @@ contract Strategy is BaseHealthCheck {
                 INTERNAL
     //////////////////////////////////////////////////////////////*/
 
-    function _deployFunds(uint256 /*_amount*/) internal override {
-        //do nothing, we want to only have the keeper swap funds
+    function _deployFunds(uint256 _amount) internal override {
+        _stake(_amount);
     }
 
     function _tend(uint256 /*_totalIdle*/) internal override {
-        if (!TokenizedStrategy.isShutdown()) {
-            _stake(Math.min(maxSingleTrade, _balanceAsset()));
-        }
+        _stake(Math.min(maxSingleTrade, _balanceAsset()));
     }
 
     function _tendTrigger() internal view override returns (bool) {
@@ -94,20 +93,16 @@ contract Strategy is BaseHealthCheck {
         require((LSTprice > 1 && block.timestamp - updatedAt < chainlinkHeartbeat), "!chainlink");
     }
 
-    function _chainlinkPrice(AggregatorInterface _chainlinkOracle) internal view returns (uint256 price) {
-        (, int256 answer, , uint256 updatedAt, ) = _chainlinkOracle.latestRoundData();
-        price = uint256(answer);
-        require((price > 1 && block.timestamp - updatedAt < chainlinkHeartbeat), "!chainlink");
-    }
-
     function _stake(uint256 _amount) internal {
         if(_amount < ASSET_DUST){
             return;
         }
         IWETH(address(asset)).withdraw(_amount); //WETH --> ETH
         if(ICurve(curve).get_dy(ASSETID, LSTID, _amount) < _amount){ //check if we receive more than 1:1 through swaps
-            ISTETH(LST).submit{value: _amount}(GOV); //stake 1:1
-        }else{
+            if (!ISTETH(LST).isStakingPaused()) { //if staking is paused & unfavorable swaps, do nothing
+                ISTETH(LST).submit{value: _amount}(GOV); //stake 1:1
+            }
+        } else {
             ICurve(curve).exchange{value: _amount}(ASSETID, LSTID, _amount, _amount); //swap for at least 1:1
         }
         lastDeposit = block.timestamp;
@@ -123,12 +118,18 @@ contract Strategy is BaseHealthCheck {
     }
 
     function availableWithdrawLimit(address /*_owner*/) public view override returns (uint256) {
-        return TokenizedStrategy.totalIdle() + maxSingleWithdraw;
+        return _balanceAsset() + maxSingleWithdraw;
     }
     
     function _freeFunds(uint256 _assetAmount) internal override {
         //Unstake LST amount proportional to the shares redeemed:
-        uint256 LSTamountToUnstake = _balanceLST() * _assetAmount / TokenizedStrategy.totalDebt();
+        uint256 totalAssets = TokenizedStrategy.totalAssets();
+        uint256 assetBalance = _balanceAsset();
+        if (assetBalance >= totalAssets) {
+            return;
+        }
+        uint256 totalDebt = totalAssets - assetBalance;
+        uint256 LSTamountToUnstake = _balanceLST() * _assetAmount / totalDebt;
         if (LSTamountToUnstake > 2) {
             _unstake(LSTamountToUnstake);
         }
@@ -136,9 +137,7 @@ contract Strategy is BaseHealthCheck {
 
     function _unstake(uint256 _amount) internal {
         uint256 expectedAmountOut = _amount * (MAX_BPS - swapSlippage) / MAX_BPS; //Without oracle we expect 1:1, but can offset that expectation with swapSlippage
-        if (address(chainlinkOracle) != address(0)){ //Check if chainlink oracle is set
-            expectedAmountOut = expectedAmountOut * _LSTprice() / WAD; //adjust expectedAmountOut by actual depeg
-        }
+        expectedAmountOut = expectedAmountOut * _LSTprice() / WAD; //adjust expectedAmountOut by actual depeg
         ICurve(curve).exchange(LSTID, ASSETID, _amount, expectedAmountOut);
         IWETH(address(asset)).deposit{value: address(this).balance}(); //ETH --> WETH
     }
@@ -161,9 +160,7 @@ contract Strategy is BaseHealthCheck {
 
     function _getPessimisticLSTprice() internal view returns (uint256 LSTprice) {
         LSTprice = ICurve(curve).get_dy(LSTID, ASSETID, WAD); //price estimate and fee determined through actual swap route
-        if (address(chainlinkOracle) != address(0)){ //Check if chainlink oracle is set
-            LSTprice = Math.min(LSTprice, _LSTprice()); //use pessimistic price to make sure people cannot withdraw more than the current worth of the LST
-        }
+        LSTprice = Math.min(LSTprice, _LSTprice()); //use pessimistic price to make sure people cannot withdraw more than the current worth of the LST
     }
 
     function _balanceAsset() internal view returns (uint256) {
@@ -251,16 +248,9 @@ contract Strategy is BaseHealthCheck {
         _;
     }
 
-    /// @notice Set the curve router address in case TVL has migrated to a new curve pool. Only callable by governance.
-    function setCurveRouter(address _curve) external onlyGovernance {
-        require(_curve != address(0));
-        ERC20(asset).safeApprove(_curve, type(uint256).max);
-        ERC20(LST).safeApprove(_curve, type(uint256).max);
-        curve = _curve;
-    }
-
-    /// @notice Set the chainlink oracle address to a new address. Can be set to address(0) to circumvent chainlink pricing. Only callable by governance.
+    /// @notice Set the chainlink oracle address to a new address. Only callable by governance.
     function setChainlinkOracle(address _chainlinkOracle) external onlyGovernance {
+        require(_chainlinkOracle != address(0));
         chainlinkOracle = AggregatorInterface(_chainlinkOracle);
     }
 
@@ -277,7 +267,6 @@ contract Strategy is BaseHealthCheck {
     /// @notice Initiate a liquid staking token (LST) withdrawal process to redeem 1:1. Returns requestIds which can be used to claim asset into the strategy.
     /// @param _amounts the amounts of LST to initiate a withdrawal process for.
     function initiateLSTwithdrawal(uint256[] calldata _amounts) external onlyManagement returns (uint256[] memory requestIds) {
-        ERC20(LST).safeApprove(withdrawalQueueLST, type(uint256).max);
         requestIds = IQueue(withdrawalQueueLST).requestWithdrawals(_amounts, address(this));
     }
 

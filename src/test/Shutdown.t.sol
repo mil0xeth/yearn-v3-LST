@@ -25,17 +25,6 @@ contract ShutdownTest is Setup {
         checkStrategyInvariantsAfterRedeem(strategy);
     }
 
-    function test_chainlinkStaleDirectRedeem(uint256 _amount) public {
-        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
-        vm.prank(management);
-        strategy.setChainlinkHeartbeat(0);
-        mintAndDepositIntoStrategy(strategy, user, _amount);
-        vm.prank(user);
-        strategy.redeem(_amount, user, user);
-        checkStrategyInvariantsAfterRedeem(strategy);
-        assertGe(asset.balanceOf(user) * (MAX_BPS + expectedActivityLossBPS)/MAX_BPS, _amount, "!final balance");
-    }
-
     function testFail_chainlinkStaleHarvest(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         vm.prank(management);
@@ -52,7 +41,7 @@ contract ShutdownTest is Setup {
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
 
-        checkStrategyTotals(strategy, _amount, 0, _amount);
+        checkStrategyTotals(strategy, _amount, _amount, 0);
 
         vm.prank(keeper);
         strategy.report();

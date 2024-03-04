@@ -36,7 +36,7 @@ contract OperationLossTest is Setup {
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
 
-        checkStrategyTotals(strategy, _amount, 0, _amount);
+        checkStrategyTotals(strategy, _amount, _amount, 0);
 
         // Report loss
         vm.prank(keeper);
@@ -92,7 +92,7 @@ contract OperationLossTest is Setup {
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
-        checkStrategyTotals(strategy, _amount, 0, _amount);
+        checkStrategyTotals(strategy, _amount, _amount, 0);
 
         // Report loss
         vm.prank(keeper);
@@ -168,7 +168,7 @@ contract OperationLossTest is Setup {
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
-        checkStrategyTotals(strategy, _amount, 0, _amount);
+        checkStrategyTotals(strategy, _amount, _amount, 0);
 
         // Report loss
         vm.prank(keeper);
@@ -227,7 +227,7 @@ contract OperationLossTest is Setup {
 
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
-        checkStrategyTotals(strategy, _amount, 0, _amount);
+        checkStrategyTotals(strategy, _amount, _amount, 0);
 
         // Report loss
         vm.prank(keeper);
