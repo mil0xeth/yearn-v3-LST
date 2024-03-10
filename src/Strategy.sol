@@ -37,10 +37,6 @@ contract Strategy is BaseHealthCheck {
     uint256 public maxSingleWithdraw; //maximum amount that should be withdrawn in one go
     uint256 public swapSlippage; //actual slippage for a trade
     uint256 public bufferSlippage; //pessimistic buffer to the totalAssets to simulate having to realize the LST to asset
-    uint256 public depositTrigger; //amount in asset that will trigger a tend if idle.
-    uint256 public maxTendBasefee; //max amount the base fee can be for a tend to happen.
-    uint256 public minDepositInterval; //minimum time between deposits to wait.
-    uint256 public lastDeposit; //timestamp of the last deployment of funds.
     bool public open = true; //bool if the strategy is open for any depositors.
     mapping(address => bool) public allowed; //mapping of addresses allowed to deposit.
 
@@ -56,11 +52,8 @@ contract Strategy is BaseHealthCheck {
 
         maxSingleTrade = 1000 * 1e18; //maximum amount that should be swapped by the keeper in one go
         maxSingleWithdraw = 1000 * 1e18; //maximum amount that should be withdrawn in one go
-        swapSlippage = 1_00; //actual slippage for a trade
+        swapSlippage = 50; //actual slippage for a trade
         bufferSlippage = 50; //pessimistic correction to the totalAssets to simulate having to realize the LST to asset and thus virtually create a buffer for swapping
-        depositTrigger = 5e18;
-        maxTendBasefee = 30e9; //default max tend fee to 100 gwei
-        minDepositInterval = 60 * 60 * 6; //default min deposit interval to 6 hours
     }
 
     receive() external payable {}
@@ -73,20 +66,6 @@ contract Strategy is BaseHealthCheck {
         _stake(_amount);
     }
 
-    function _tend(uint256 /*_totalIdle*/) internal override {
-        _stake(Math.min(maxSingleTrade, _balanceAsset()));
-    }
-
-    function _tendTrigger() internal view override returns (bool) {
-        if (TokenizedStrategy.isShutdown()) {
-            return false;
-        }
-        if (block.timestamp - lastDeposit > minDepositInterval && _balanceAsset() > depositTrigger) {
-            return block.basefee < maxTendBasefee;
-        }
-        return false;
-    }
-
     function _LSTprice() internal view returns (uint256 LSTprice) {
         (, int256 answer, , uint256 updatedAt, ) = chainlinkOracle.latestRoundData();
         LSTprice = uint256(answer);
@@ -94,18 +73,17 @@ contract Strategy is BaseHealthCheck {
     }
 
     function _stake(uint256 _amount) internal {
-        if(_amount < ASSET_DUST){
+        if (_amount < ASSET_DUST){
             return;
         }
         IWETH(address(asset)).withdraw(_amount); //WETH --> ETH
-        if(ICurve(curve).get_dy(ASSETID, LSTID, _amount) < _amount){ //check if we receive more than 1:1 through swaps
+        if (ICurve(curve).get_dy(ASSETID, LSTID, _amount) < _amount){ //check if we receive more than 1:1 through swaps
             if (!ISTETH(LST).isStakingPaused()) { //if staking is paused & unfavorable swaps, do nothing
                 ISTETH(LST).submit{value: _amount}(GOV); //stake 1:1
             }
         } else {
             ICurve(curve).exchange{value: _amount}(ASSETID, LSTID, _amount, _amount); //swap for at least 1:1
         }
-        lastDeposit = block.timestamp;
     }
 
     function availableDepositLimit(address _owner) public view override returns (uint256) {
@@ -125,9 +103,6 @@ contract Strategy is BaseHealthCheck {
         //Unstake LST amount proportional to the shares redeemed:
         uint256 totalAssets = TokenizedStrategy.totalAssets();
         uint256 assetBalance = _balanceAsset();
-        if (assetBalance >= totalAssets) {
-            return;
-        }
         uint256 totalDebt = totalAssets - assetBalance;
         uint256 LSTamountToUnstake = _balanceLST() * _assetAmount / totalDebt;
         if (LSTamountToUnstake > 2) {
@@ -205,23 +180,6 @@ contract Strategy is BaseHealthCheck {
     function setBufferSlippage(uint256 _bufferSlippage) external onlyManagement {
         require(_bufferSlippage <= MAX_BPS);
         bufferSlippage = _bufferSlippage;
-    }
-
-    /// @notice Set the max base fee for tending to occur at.
-    function setMaxTendBasefee(uint256 _maxTendBasefee) external onlyManagement {
-        maxTendBasefee = _maxTendBasefee;
-    }
-
-    /// @notice Set the amount in asset that should trigger a tend if idle.
-    function setDepositTrigger(uint256 _depositTrigger) external onlyManagement {
-        depositTrigger = _depositTrigger;
-    }
-
-    /// @notice Set the minimum deposit wait time.
-    function setDepositInterval(uint256 _newDepositInterval) external onlyManagement {
-        // Cannot set to 0.
-        require(_newDepositInterval > 0, "interval too low");
-        minDepositInterval = _newDepositInterval;
     }
 
     // Change if anyone can deposit in or only white listed addresses
