@@ -37,8 +37,6 @@ contract MainTest is Setup {
         assertEq(asset.balanceOf(user), 0, "user balance after deposit =! 0");
         assertEq(strategy.totalAssets(), _amount, "strategy.totalAssets() != _amount after deposit");
         console.log("strategy.totalAssets() after deposit: ", strategy.totalAssets() );
-        console.log("strategy.totalDebt() after deposit: ", strategy.totalDebt() );
-        console.log("strategy.totalIdle() after deposit: ", strategy.totalIdle() );
         console.log("strategy.balanceAsset() after deposit", strategy.balanceAsset());
         console.log("strategy.balanceLST()", strategy.balanceLST());
 
@@ -82,8 +80,6 @@ contract MainTest is Setup {
         vm.prank(user);
         strategy.redeem(_amount, user, user);
         console.log("redeem strategy.totalAssets() after redeem: ", strategy.totalAssets() );
-        console.log("strategy.totalDebt() after redeem: ", strategy.totalDebt() );
-        console.log("strategy.totalIdle() after redeem: ", strategy.totalIdle() );
         console.log("assetBalance: ", asset.balanceOf(address(strategy)) );
         console.log("assetBalance: ", strategy.balanceAsset() );
         console.log("strategy.balanceLST()", strategy.balanceLST());

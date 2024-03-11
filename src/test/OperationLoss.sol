@@ -29,7 +29,7 @@ contract OperationLossTest is Setup {
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         _lossFactor = uint16(bound(uint256(_lossFactor), 10, maxLossBPS));
-        setPerformanceFeeToZero(address(strategy));
+        setFees(0, 0);
         uint256 profit;
         uint256 loss;
 
@@ -86,7 +86,7 @@ contract OperationLossTest is Setup {
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         _lossFactor = uint16(bound(uint256(_lossFactor), 10, maxLossBPS));
-        setPerformanceFeeToZero(address(strategy));
+        setFees(0, 0);
         uint256 profit;
         uint256 loss;
 
@@ -162,7 +162,7 @@ contract OperationLossTest is Setup {
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         _lossFactor = uint16(bound(uint256(_lossFactor), 200, maxLossBPS));
-        setPerformanceFeeToZero(address(strategy));
+        setFees(0, 0);
         uint256 profit;
         uint256 loss;
 
@@ -221,7 +221,7 @@ contract OperationLossTest is Setup {
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         _lossFactor = uint16(bound(uint256(_lossFactor), 50, maxLossBPS));
-        setPerformanceFeeToZero(address(strategy));
+        setFees(0, 0);
         uint256 profit;
         uint256 loss;
 

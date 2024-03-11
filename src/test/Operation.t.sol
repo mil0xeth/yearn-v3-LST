@@ -27,7 +27,7 @@ contract OperationTest is Setup {
         console.log("GAS BEFORE ASSUME", address(strategy).balance);
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         console.log("GAS BEFORE SETPERF", address(strategy).balance);
-        setPerformanceFeeToZero(address(strategy));
+        setFees(0, 0);
         // Deposit into strategy
         console.log("strategy.address", address(strategy));
         console.log("GAS BEFORE DEPOSIT", address(strategy).balance);
@@ -69,7 +69,7 @@ contract OperationTest is Setup {
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         _profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
-        setPerformanceFeeToZero(address(strategy));
+        setFees(0, 0);
         uint256 profit;
         uint256 loss;
 
@@ -136,7 +136,7 @@ contract OperationTest is Setup {
     ) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
         _profitFactor = uint16(bound(uint256(_profitFactor), 10, MAX_BPS));
-        setPerformanceFeeToZero(address(strategy));
+        setFees(0, 0);
         uint256 profit;
         uint256 loss;
 
@@ -206,7 +206,7 @@ contract OperationTest is Setup {
         //vm.assume(_divider > 0 && _divider < maxDivider);
         uint16 _profitFactor = uint16(maxDivider) / _divider;
         //vm.assume(_secondDivider > 0 && _secondDivider < maxDivider);       
-        setPerformanceFeeToZero(address(strategy));
+        setFees(0, 0);
         address secondUser = address(22);
         address thirdUser = address(33);
         uint256 secondUserAmount = _amount / _divider;
@@ -342,7 +342,7 @@ contract OperationTest is Setup {
         //vm.assume(_divider > 0 && _divider < maxDivider);
         //vm.assume(_secondDivider > 0 && _secondDivider < maxDivider);
         
-        setPerformanceFeeToZero(address(strategy));
+        setFees(0, 0);
         
         address secondUser = address(22);
         address thirdUser = address(33);
@@ -450,6 +450,9 @@ contract OperationTest is Setup {
         //total gain:
         //assertGe((asset.balanceOf(user)+asset.balanceOf(secondUser)+asset.balanceOf(thirdUser)) * (MAX_BPS + expectedActivityLossMultipleUsersBPS)/MAX_BPS, balanceBefore + _amount + secondUserAmount + thirdUserAmount + toAirdrop, "!final balance");
         checkStrategyTotals(strategy, 0, 0, 0);
+        console.log("balance performanceFeeRecipient: ", asset.balanceOf(performanceFeeRecipient));
+        console.log("shares performanceFeeRecipient: ", strategy.balanceOf(performanceFeeRecipient));
+        console.log("strategy.totalSupply()", strategy.totalSupply());
     }
 
     function test_profitableReport_withFees_Airdrop(
