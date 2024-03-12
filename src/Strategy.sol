@@ -26,9 +26,9 @@ contract Strategy is BaseHealthCheck {
     // Use chainlink oracle to check latest LST/asset price
     AggregatorInterface public chainlinkOracle = AggregatorInterface(0x86392dC19c0b719886221c78AB11eb8Cf5c52812); //STETH/ETH
     uint256 public chainlinkHeartbeat = 86400;
-    address public constant curve = 0xDC24316b9AE028F1497c275EB9192a3Ea0f67022; //curve_ETH_STETH
-    int128 internal constant ASSETID = 0;
-    int128 internal constant LSTID = 1;
+    address public curve = 0xDC24316b9AE028F1497c275EB9192a3Ea0f67022; //curve_ETH_STETH
+    int128 public ASSETID = 0;
+    int128 public LSTID = 1;
 
     uint256 public swapFeePercentage;
 
@@ -210,6 +210,18 @@ contract Strategy is BaseHealthCheck {
     function setChainlinkOracle(address _chainlinkOracle) external onlyGovernance {
         require(_chainlinkOracle != address(0));
         chainlinkOracle = AggregatorInterface(_chainlinkOracle);
+    }
+
+    /// @notice Set the curve pool address in case TVL has migrated to a new curve pool. Only callable by governance.
+    function setCurvePool(address _curve, int128 _ASSETID, int128 _LSTID) external onlyGovernance {
+        require(_curve != address(0));
+        asset.safeApprove(curve, 0);
+        ERC20(LST).safeApprove(curve, 0);
+        asset.safeApprove(_curve, type(uint256).max);
+        ERC20(LST).safeApprove(_curve, type(uint256).max);
+        curve = _curve;
+        ASSETID = _ASSETID;
+        LSTID = _LSTID;
     }
 
     /*//////////////////////////////////////////////////////////////
