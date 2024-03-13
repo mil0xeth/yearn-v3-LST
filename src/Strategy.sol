@@ -33,6 +33,7 @@ contract Strategy is BaseHealthCheck {
     uint256 public swapFeePercentage;
 
     // Parameters    
+    bool public stakeAsset = true; //if true, the strategy will try and stake/swap asset to LST
     uint256 public maxSingleTrade; //maximum amount that should be swapped by the keeper in one go
     uint256 public maxSingleWithdraw; //maximum amount that should be withdrawn in one go
     uint256 public swapSlippage; //actual slippage for a trade
@@ -63,7 +64,9 @@ contract Strategy is BaseHealthCheck {
     //////////////////////////////////////////////////////////////*/
 
     function _deployFunds(uint256 _amount) internal override {
-        _stake(_amount);
+        if (stakeAsset) {
+            _stake(_amount);
+        }
     }
 
     function _LSTprice() internal view returns (uint256 LSTprice) {
@@ -73,9 +76,7 @@ contract Strategy is BaseHealthCheck {
     }
 
     function _stake(uint256 _amount) internal {
-        if (_amount < ASSET_DUST){
-            return;
-        }
+        if (_amount < ASSET_DUST) return;
         IWETH(address(asset)).withdraw(_amount); //WETH --> ETH
         if (ICurve(curve).get_dy(ASSETID, LSTID, _amount) < _amount){ //check if we receive more than 1:1 through swaps
             if (!ISTETH(LST).isStakingPaused()) { //if staking is paused & unfavorable swaps, do nothing
@@ -102,8 +103,7 @@ contract Strategy is BaseHealthCheck {
     function _freeFunds(uint256 _assetAmount) internal override {
         //Unstake LST amount proportional to the shares redeemed:
         uint256 totalAssets = TokenizedStrategy.totalAssets();
-        uint256 assetBalance = _balanceAsset();
-        uint256 totalDebt = totalAssets - assetBalance;
+        uint256 totalDebt = totalAssets - _balanceAsset();
         uint256 LSTamountToUnstake = _balanceLST() * _assetAmount / totalDebt;
         if (LSTamountToUnstake > 2) {
             _unstake(LSTamountToUnstake);
@@ -111,30 +111,26 @@ contract Strategy is BaseHealthCheck {
     }
 
     function _unstake(uint256 _amount) internal {
-        uint256 expectedAmountOut = _amount * (MAX_BPS - swapSlippage) / MAX_BPS; //Without oracle we expect 1:1, but can offset that expectation with swapSlippage
-        expectedAmountOut = expectedAmountOut * _LSTprice() / WAD; //adjust expectedAmountOut by actual depeg
+        uint256 expectedAmountOut = _amount * _LSTprice() * (MAX_BPS - swapSlippage) / WAD / MAX_BPS; //Without oracle we expect 1:1, but can offset that expectation with swapSlippage & adjust expectedAmountOut by actual depeg
         ICurve(curve).exchange(LSTID, ASSETID, _amount, expectedAmountOut);
         IWETH(address(asset)).deposit{value: address(this).balance}(); //ETH --> WETH
     }
 
     function _harvestAndReport() internal override returns (uint256 _totalAssets) {
-        // deposit any loose gas
-        uint256 balance = address(this).balance;
-        if (balance > 0) {
-            IWETH(address(asset)).deposit{value: balance}();
-        }
-
         // invest any loose asset
-        if (!TokenizedStrategy.isShutdown()) {
+        if (!TokenizedStrategy.isShutdown() && stakeAsset) {
             _stake(Math.min(maxSingleTrade, _balanceAsset()));
         }
 
         // Total assets of the strategy, pessimistically account for LST at a value as if it had been swapped back to asset with a virtual buffer slippage
-        _totalAssets = _balanceAsset() + _balanceLST() * _getPessimisticLSTprice() * (MAX_BPS - bufferSlippage) / WAD / MAX_BPS;
+        uint256 LSTbalance = _balanceLST();
+        _totalAssets = _balanceAsset() + LSTbalance * _getPessimisticLSTprice(LSTbalance) * (MAX_BPS - bufferSlippage) / WAD / MAX_BPS;
     }
 
-    function _getPessimisticLSTprice() internal view returns (uint256 LSTprice) {
-        LSTprice = ICurve(curve).get_dy(LSTID, ASSETID, WAD); //price estimate and fee determined through actual swap route
+    function _getPessimisticLSTprice(uint256 _LSTbalance) internal view returns (uint256 LSTprice) {
+        uint256 amount = Math.min(_LSTbalance, maxSingleWithdraw);
+        amount = Math.max(amount, WAD); //use at the very least WAD
+        LSTprice = ICurve(curve).get_dy(LSTID, ASSETID, amount) * WAD / amount; //price estimate and fee determined through actual swap route
         LSTprice = Math.min(LSTprice, _LSTprice()); //use pessimistic price to make sure people cannot withdraw more than the current worth of the LST
     }
 
@@ -158,6 +154,11 @@ contract Strategy is BaseHealthCheck {
     /// @notice Returns the amount of staked asset in liquid staking token (LST) the strategy holds.
     function balanceLST() external view returns (uint256) {
         return _balanceLST();
+    }
+
+    /// @notice Set the boolean if the strategy will try and stake/swap asset to LST (true) or not (false).
+    function setStakeAsset(bool _stakeAsset) external onlyManagement {
+        stakeAsset = _stakeAsset;
     }
 
     /// @notice Set the maximum amount of asset that can be moved by keepers in a single transaction. This is to avoid unnecessarily large slippages when harvesting.
