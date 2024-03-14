@@ -30,8 +30,6 @@ contract Strategy is BaseHealthCheck {
     int128 public ASSETID = 0;
     int128 public LSTID = 1;
 
-    uint256 public swapFeePercentage;
-
     // Parameters    
     bool public stakeAsset = true; //if true, the strategy will try and stake/swap asset to LST
     uint256 public maxSingleTrade; //maximum amount that should be swapped by the keeper in one go
